@@ -1,5 +1,6 @@
 open Unix
 let format = Printf.sprintf
+let pair = fun x y -> (x,y)
 
 module P = struct
   open Angstrom
@@ -21,8 +22,10 @@ module P = struct
   let tok_colon = lex (char ':')
   let tok_equ = lex (char '=')
   let tok_ident = lex (take_while1 is_ident)
+
   (* Does not handle escapes! *)
-  let tok_string = lex (char '"') *> take_till (fun c -> c = '"') <* char '"'
+  let tok_string = (lex (char '"') *> take_till (fun c -> c = '"') <* char '"')
+    <|> (lex (char '\'') *> take_till (fun c -> c = '\'') <* char '\'')
 
   (* [namespace :] tag *)
   let qual_name =
@@ -39,6 +42,14 @@ module P = struct
 
   type attr = (string * string) * string
   type xml_node = Xml of string * string * attr list * xml_node list
+
+
+   (* < tag (attr=val)* > *)
+  let tag_open =
+    tok_langle *> qual_name >>= fun (ns,id) ->
+      lift2 (fun attrs _ -> Xml (ns,id,attrs,[]))
+        (many attr_val)
+        tok_rangle
 
   (* </ tag > *)
   let tag_close (ns,id) =
@@ -60,10 +71,10 @@ module P = struct
 
 end
 
-(*
-let () =
+open Angstrom
+
+let await () =
 let sock_incoming = socket PF_INET SOCK_STREAM 0 in
-let message = "Greetings!" in
   bind sock_incoming (ADDR_INET (inet_addr_loopback,12345));
   listen sock_incoming 1;
   let (sock_cl, cl_addr) = accept sock_incoming in
@@ -71,6 +82,10 @@ let message = "Greetings!" in
     ADDR_UNIX str   -> (str,0)
   | ADDR_INET (a,p) -> (string_of_inet_addr a,p)
   in
-  let _ = write sock_cl message 0 (String.length message) in
-    Printf.printf "Connection from %s:%d\n" addr port;
-*)
+  Printf.printf "Connection from %s:%d\n" addr port;
+  let buf = String.make 2000 '0' in
+  let len = read sock_cl str 0 2000 in
+  let inp = `String (String.sub str 0 len) in
+  match parse_only (lift2 P.prologue P.tag_open pair) inp) with
+    | Result.Error str -> failwith str
+    | Result.Ok (attrs,Xml(ns,id,attrs,[]) -> failwith "undefined"
