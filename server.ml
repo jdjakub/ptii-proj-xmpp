@@ -1,4 +1,3 @@
-open Unix
 let format = Printf.sprintf
 let pair = fun x y -> (x,y)
 
@@ -8,21 +7,21 @@ module Xml = struct
   type xml_close = string * string
   type xml_node = Text of string | Xml of xml_open * xml_node list
 
+  let string_of_qn = function
+    | ("",name) -> name
+    | (ns,name) -> ns ^ ":" ^ name
+
   let string_of_attrs attrs =
-    let to_string ((ns,attr),value) =
-        let qual_name = match ns with
-          | "" -> attr
-          | _  -> ns ^ ":" ^ attr
-        in
-        format " %s=\"%s\"" qual_name value (* DOES NOT SANITISE VAL!! *)
+    let to_string (qn,value) =
+        format " %s=\"%s\"" (string_of_qn qn) value (* DOES NOT SANITISE VAL!! *)
     in
     String.concat "" (List.map to_string attrs)
 
-  let to_string_open (ns,tag,attrs) = format "<%s:%s%s>" ns tag (string_of_attrs attrs)
+  let to_string_open (ns,tag,attrs) = format "<%s%s>" (string_of_qn (ns,tag)) (string_of_attrs attrs)
 
-  let to_string_single (ns,tag,attrs) = format "<%s:%s%s/>" ns tag (string_of_attrs attrs)
+  let to_string_single (ns,tag,attrs) = format "<%s%s/>" (string_of_qn (ns,tag)) (string_of_attrs attrs)
 
-  let to_string_close (ns,tag) = format "</%s:%s>" ns tag
+  let to_string_close (ns,tag) = format "</%s>" (string_of_qn (ns,tag))
 
   let rec to_string = function
     | Text str -> str
@@ -103,40 +102,48 @@ end
 open Angstrom
 module X = Xml
 
-let await () =
-let sock_incoming = socket PF_INET SOCK_STREAM 0 in
-  bind sock_incoming (ADDR_INET (inet_addr_loopback,5222));
-  listen sock_incoming 1;
-  let (sock_cl, cl_addr) = accept sock_incoming in
-  let (addr, port) = match cl_addr with
-    ADDR_UNIX str   -> (str,0)
-  | ADDR_INET (a,p) -> (string_of_inet_addr a,p)
-  in
-  Printf.printf "Connection from %s:%d\n" addr port;
-  let buf = String.make 2000 '0' in
-  let len = read sock_cl buf 0 2000 in
-  let inp = String.sub buf 0 len in
-  print_endline inp;
-  match parse_only P.(xml_decl *> tag_open) (`String inp) with
-  | Error str -> failwith str
-  | Ok xml -> match xml with
-    | (_,"stream",attrs) ->
-        let my_addr = List.assoc ("","to") attrs in
-        let response = "<?xml version=\"1.0\"?>" ^
-              X.to_string_open ("stream","stream",[
-                (("xmlns","stream"),"http://etherx.jabber.org/streams");
-                (("","xmlns"),"jabber:client");
-                (("","version"),"1.0");
-                (("","from"),my_addr);
-                (("","id"),"totally-random-id");
-                (("xml","lang"),"en"); ]) ^
-              X.to_string (X.Xml (("stream","features",[]),[]))
-        in
-        print_endline response;
-        let _ = write sock_cl response 0 (String.length response) in
-        let len = read sock_cl buf 0 2000 in
+let expect buf read respond p =
+  let open Buffered in
+  let rec run = function
+    | Partial next ->
+        let len = read buf 0 2000 in
         let inp = String.sub buf 0 len in
-        print_string inp;
-    | _ -> failwith "Not 'stream'"
+        run (next (`String inp))
+    | Fail (unc,strs,str) ->
+        Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
+    | Done (unc,result) ->
+        Ok result (* THROWS AWAY UNCONSUMED!!! *)
+  in run (parse p)
 
-let res = await ()
+let sv_start () =
+  let per_client from_ie to_ie =
+    let respond str = print_endline str; output_string to_ie str; flush to_ie
+    in
+    let buf = String.make 2000 '.' in
+    let expect = expect buf (input from_ie) respond
+    in
+    match expect P.(xml_decl *> tag_open) with
+    | Error str -> failwith str
+    | Ok xml -> print_endline (X.to_string_open xml);
+      match xml with
+      | (_,tag,attrs) ->
+          if not (tag = "stream") then failwith "Not 'stream'" else
+          let my_addr = List.assoc ("","to") attrs in
+          let response = "<?xml version=\"1.0\"?>" ^
+                X.to_string_open ("stream","stream",[
+                  (("xmlns","stream"),"http://etherx.jabber.org/streams");
+                  (("","xmlns"),"jabber:client");
+                  (("","version"),"1.0");
+                  (("","from"),my_addr);
+                  (("","id"),"totally-random-id");
+                  (("xml","lang"),"en"); ]) ^
+                X.to_string (X.Xml (("stream","features",[]),[]))
+          in
+          respond response;
+          (match expect P.tag_open with
+          | Error str -> failwith str
+          | Ok xml -> print_endline (X.to_string_open xml))
+  in
+  Unix.(establish_server per_client (ADDR_INET (inet_addr_loopback,5222)))
+
+let res = sv_start ()
