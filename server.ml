@@ -2,6 +2,37 @@ open Unix
 let format = Printf.sprintf
 let pair = fun x y -> (x,y)
 
+module Xml = struct
+  type attr = (string * string) * string
+  type xml_open = string * string * attr list
+  type xml_close = string * string
+  type xml_node = Text of string | Xml of xml_open * xml_node list
+
+  let string_of_attrs attrs =
+    let to_string ((ns,attr),value) =
+        let qual_name = match ns with
+          | "" -> attr
+          | _  -> ns ^ ":" ^ attr
+        in
+        format " %s=\"%s\"" qual_name value (* DOES NOT SANITISE VAL!! *)
+    in
+    String.concat "" (List.map to_string attrs)
+
+  let to_string_open (ns,tag,attrs) = format "<%s:%s%s>" ns tag (string_of_attrs attrs)
+
+  let to_string_single (ns,tag,attrs) = format "<%s:%s%s/>" ns tag (string_of_attrs attrs)
+
+  let to_string_close (ns,tag) = format "</%s:%s>" ns tag
+
+  let rec to_string = function
+    | Text str -> str
+    | Xml ((ns,tag,attrs),children) ->
+      match children with
+      | [] -> to_string_single (ns,tag,attrs)
+      | _  -> let interior = String.concat "" (List.map to_string children) in
+              to_string_open (ns,tag,attrs) ^ interior ^ to_string_close (ns,tag)
+end
+
 module P = struct
   open Angstrom
 
@@ -38,16 +69,13 @@ module P = struct
       (tok_equ *> tok_string)
 
   (* <?xml version="1.0" ?> *)
-  let prologue = lex (string "<?xml") *> many attr_val <* lex (string "?>")
+  let xml_decl = lex (string "<?xml") *> many attr_val <* lex (string "?>")
 
-  type attr = (string * string) * string
-  type xml_node = Xml of string * string * attr list * xml_node list
-
-
+  open Xml
    (* < tag (attr=val)* > *)
   let tag_open =
     tok_langle *> qual_name >>= fun (ns,id) ->
-      lift2 (fun attrs _ -> Xml (ns,id,attrs,[]))
+      lift2 (fun attrs _ -> (ns,id,attrs))
         (many attr_val)
         tok_rangle
 
@@ -62,20 +90,22 @@ module P = struct
     tag_close tagname *> return [] <|>
       (t_rec >>= fun tree -> b_rec >>| fun trees -> tree::trees) )
 
-  (* < tag attr_val* ( /> | > branch(tag) ) *)
-  let tree = fix ( fun t_rec ->
+  (* text | < tag attr_val* ( /> | > branch(tag) ) *)
+  let tree = (take_while1 (fun c -> not (c = '<')) >>| (fun t -> Text t)) <|>
+    fix ( fun t_rec ->
     tok_langle *> qual_name >>= fun (ns,id) ->
-      lift2 (fun attrs children -> Xml (ns, id, attrs, children))
-        (many attr_val)
-        (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) )
+            lift2 (fun attrs children -> Xml ((ns, id, attrs), children))
+              (many attr_val)
+              (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) )
 
 end
 
 open Angstrom
+module X = Xml
 
 let await () =
 let sock_incoming = socket PF_INET SOCK_STREAM 0 in
-  bind sock_incoming (ADDR_INET (inet_addr_loopback,12345));
+  bind sock_incoming (ADDR_INET (inet_addr_loopback,5222));
   listen sock_incoming 1;
   let (sock_cl, cl_addr) = accept sock_incoming in
   let (addr, port) = match cl_addr with
@@ -84,8 +114,29 @@ let sock_incoming = socket PF_INET SOCK_STREAM 0 in
   in
   Printf.printf "Connection from %s:%d\n" addr port;
   let buf = String.make 2000 '0' in
-  let len = read sock_cl str 0 2000 in
-  let inp = `String (String.sub str 0 len) in
-  match parse_only (lift2 P.prologue P.tag_open pair) inp) with
-    | Result.Error str -> failwith str
-    | Result.Ok (attrs,Xml(ns,id,attrs,[]) -> failwith "undefined"
+  let len = read sock_cl buf 0 2000 in
+  let inp = String.sub buf 0 len in
+  print_endline inp;
+  match parse_only P.(xml_decl *> tag_open) (`String inp) with
+  | Error str -> failwith str
+  | Ok xml -> match xml with
+    | (_,"stream",attrs) ->
+        let my_addr = List.assoc ("","to") attrs in
+        let response = "<?xml version=\"1.0\"?>" ^
+              X.to_string_open ("stream","stream",[
+                (("xmlns","stream"),"http://etherx.jabber.org/streams");
+                (("","xmlns"),"jabber:client");
+                (("","version"),"1.0");
+                (("","from"),my_addr);
+                (("","id"),"totally-random-id");
+                (("xml","lang"),"en"); ]) ^
+              X.to_string (X.Xml (("stream","features",[]),[]))
+        in
+        print_endline response;
+        let _ = write sock_cl response 0 (String.length response) in
+        let len = read sock_cl buf 0 2000 in
+        let inp = String.sub buf 0 len in
+        print_string inp;
+    | _ -> failwith "Not 'stream'"
+
+let res = await ()
