@@ -86,28 +86,31 @@ module P = struct
 
   (* branch = </ tag > | tree branch *)
   let branch t_rec tagname = fix ( fun b_rec ->
-    tag_close tagname *> return [] <|>
+    (tag_close tagname *> return []) <|>
       (t_rec >>= fun tree -> b_rec >>| fun trees -> tree::trees) )
 
   (* text | < tag attr_val* ( /> | > branch(tag) ) *)
-  let tree = (take_while1 (fun c -> not (c = '<')) >>| (fun t -> Text t)) <|>
-    fix ( fun t_rec ->
-    tok_langle *> qual_name >>= fun (ns,id) ->
+  let tree = fix ( fun t_rec ->
+    (take_while1 (function | '<' -> false | _ -> true) >>| (fun t -> Text t)) <|>
+    ( tok_langle *> qual_name >>= fun (ns,id) ->
             lift2 (fun attrs children -> Xml ((ns, id, attrs), children))
               (many attr_val)
-              (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) )
+              (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) ) )
 
 end
 
 open Angstrom
 module X = Xml
+open Rresult
 
+(* expect : string -> (string -> int -> int -> int) -> (string -> unit) -> 'a t -> ('a, string) result *)
 let expect buf read respond p =
   let open Buffered in
   let rec run = function
     | Partial next ->
         let len = read buf 0 2000 in
         let inp = String.sub buf 0 len in
+        print_endline ("[IN]: " ^ inp);
         run (next (`String inp))
     | Fail (unc,strs,str) ->
         Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
@@ -117,33 +120,27 @@ let expect buf read respond p =
 
 let sv_start () =
   let per_client from_ie to_ie =
-    let respond str = print_endline str; output_string to_ie str; flush to_ie
+    let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
+    let expect p = expect (String.make 2000 '.') (input from_ie) respond p
     in
-    let buf = String.make 2000 '.' in
-    let expect = expect buf (input from_ie) respond
-    in
-    match expect P.(xml_decl *> tag_open) with
-    | Error str -> failwith str
-    | Ok xml -> print_endline (X.to_string_open xml);
-      match xml with
-      | (_,tag,attrs) ->
-          if not (tag = "stream") then failwith "Not 'stream'" else
-          let my_addr = List.assoc ("","to") attrs in
-          let response = "<?xml version=\"1.0\"?>" ^
-                X.to_string_open ("stream","stream",[
-                  (("xmlns","stream"),"http://etherx.jabber.org/streams");
-                  (("","xmlns"),"jabber:client");
-                  (("","version"),"1.0");
-                  (("","from"),my_addr);
-                  (("","id"),"totally-random-id");
-                  (("xml","lang"),"en"); ]) ^
-                X.to_string (X.Xml (("stream","features",[]),[]))
-          in
-          respond response;
-          (match expect P.tag_open with
-          | Error str -> failwith str
-          | Ok xml -> print_endline (X.to_string_open xml))
+    (expect P.(xml_decl *> tag_open) >>= fun ((_,"stream",attrs) as xml) ->
+      let my_addr = List.assoc ("","to") attrs in
+      let response = "<?xml version=\"1.0\"?>" ^
+            X.to_string_open ("stream","stream",[
+              (("xmlns","stream"),"http://etherx.jabber.org/streams");
+              (("","xmlns"),"jabber:client");
+              (("","version"),"1.0");
+              (("","from"),my_addr);
+              (("","id"),"totally-random-id");
+              (("xml","lang"),"en"); ]) ^
+            X.to_string (X.Xml (("stream","features",[]),[]))
+      in
+      respond response;
+      expect P.tree >>= fun xml ->
+      xml |> function
+        | Ok _ -> print_endline "[SUCCESS]"
+        | Error err -> failwith err
   in
   Unix.(establish_server per_client (ADDR_INET (inet_addr_loopback,5222)))
 
-let res = sv_start ()
+let () = sv_start ()
