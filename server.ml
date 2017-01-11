@@ -99,19 +99,28 @@ module P = struct
 
 end
 
-open Angstrom
+module A = Angstrom
 module X = Xml
 open Rresult
 
+let plain_auth_extract str =
+  let open A in
+  let nul = char '\x00' in
+  let p = lift2 pair
+    (nul *> take_till (function | '\x00' -> true | _ -> false))
+    (nul *> take_till (fun _ -> false))
+  in parse_only p (`String str)
+
 (* expect : string -> (string -> int -> int -> int) -> (string -> unit) -> 'a t -> ('a, string) result *)
 let expect buf read respond p =
-  let open Buffered in
+  let open A.Buffered in
   let rec run = function
     | Partial next ->
         let len = read buf 0 2000 in
         let inp = String.sub buf 0 len in
-        print_endline ("[IN]: " ^ inp);
-        run (next (`String inp))
+        print_endline ("[IN]: " ^ inp ^ "[/IN]");
+        if len = 0 then Error "Didn't get anything"
+        else run (next (`String inp))
     | Fail (unc,strs,str) ->
         Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
     | Done (unc,result) ->
@@ -121,9 +130,11 @@ let expect buf read respond p =
 let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
+    let respond_tree xml = respond (X.to_string xml) in
     let expect p = expect (String.make 2000 '.') (input from_ie) respond p
     in
-    (expect P.(xml_decl *> tag_open) >>= fun ((_,"stream",attrs) as xml) ->
+    ( expect A.(P.xml_decl *> P.tag_open) >>= fun (_,tag,attrs) ->
+      if tag <> "stream" then Error "Didn't get a <stream>" else
       let my_addr = List.assoc ("","to") attrs in
       let response = "<?xml version=\"1.0\"?>" ^
             X.to_string_open ("stream","stream",[
@@ -133,13 +144,28 @@ let sv_start () =
               (("","from"),my_addr);
               (("","id"),"totally-random-id");
               (("xml","lang"),"en"); ]) ^
-            X.to_string (X.Xml (("stream","features",[]),[]))
+            X.to_string (X.Xml (("stream","features",[]),[
+              X.Xml (("","mechanisms",[
+                (("","xmlns"),"urn:ietf:params:xml:ns:xmpp-sasl")]),[
+                  X.Xml (("","mechanism",[]),[ X.Text "PLAIN" ])
+                ])
+            ]))
       in
       respond response;
-      expect P.tree >>= fun xml ->
-      xml |> function
-        | Ok _ -> print_endline "[SUCCESS]"
-        | Error err -> failwith err
+      expect P.tree >>= function
+      | X.Xml ((_,tag,_),[X.Text garbled]) ->
+        if tag <> "auth" then Error "Didn't get a <auth>" else
+        let ungarbled = B64.decode garbled in
+        let Ok (user,pass) = plain_auth_extract ungarbled in
+        print_endline ("USERNAME: " ^ user);
+        print_endline ("PASSWORD: " ^ pass);
+        respond_tree (X.Xml (("","success",[
+          (("","xmlns"),"urn:ietf:params:xml:ns:xmpp-sasl")
+          ]),[]));
+        expect A.(P.xml_decl *> P.tag_open)
+    ) |> function
+      | Ok _ -> print_endline "[SUCCESS]"; respond (X.to_string_close ("stream","stream"))
+      | Error err -> respond (X.to_string_close ("stream","stream")); failwith err
   in
   Unix.(establish_server per_client (ADDR_INET (inet_addr_loopback,5222)))
 

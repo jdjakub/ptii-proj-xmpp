@@ -1,1 +1,1 @@
-true: package(unix), package(angstrom), package(rresult)
+true: package(unix), package(angstrom), package(rresult), package(base64)
