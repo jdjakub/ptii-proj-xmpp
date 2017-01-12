@@ -70,7 +70,6 @@ module P = struct
   (* <?xml version="1.0" ?> *)
   let xml_decl = lex (string "<?xml") *> many attr_val <* lex (string "?>")
 
-  open Xml
    (* < tag (attr=val)* > *)
   let tag_open =
     tok_langle *> qual_name >>= fun (ns,id) ->
@@ -89,13 +88,15 @@ module P = struct
     (tag_close tagname *> return []) <|>
       (t_rec >>= fun tree -> b_rec >>| fun trees -> tree::trees) )
 
+  let to_text = fun t -> Xml.Text t
+
   (* text | < tag attr_val* ( /> | > branch(tag) ) *)
   let tree = fix ( fun t_rec ->
-    (take_while1 (function | '<' -> false | _ -> true) >>| (fun t -> Text t)) <|>
     ( tok_langle *> qual_name >>= fun (ns,id) ->
-            lift2 (fun attrs children -> Xml ((ns, id, attrs), children))
+            lift2 (fun attrs children -> Xml.Xml ((ns, id, attrs), children))
               (many attr_val)
-              (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) ) )
+              (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) )
+    <|> (take_while1 (function | '<' -> false | _ -> true) >>| to_text) )
 
 end
 
@@ -127,13 +128,18 @@ let expect buf read respond p =
         Ok result (* THROWS AWAY UNCONSUMED!!! *)
   in run (parse p)
 
+module Xmlns = struct
+  let sasl = "urn:ietf:params:xml:ns:xmpp-sasl"
+  let bind = "urn:ietf:params:xml:ns:xmpp-bind"
+end
+
 let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (X.to_string xml) in
-    let expect p = expect (String.make 2000 '.') (input from_ie) respond p
-    in
-    ( expect A.(P.xml_decl *> P.tag_open) >>= fun (_,tag,attrs) ->
+    let expect p = expect (String.make 2000 '.') (input from_ie) respond p in
+    let stream_handshake id =
+      expect A.(P.xml_decl *> P.tag_open) >>= fun (_,tag,attrs) ->
       if tag <> "stream" then Error "Didn't get a <stream>" else
       let my_addr = List.assoc ("","to") attrs in
       let response = "<?xml version=\"1.0\"?>" ^
@@ -142,16 +148,18 @@ let sv_start () =
               (("","xmlns"),"jabber:client");
               (("","version"),"1.0");
               (("","from"),my_addr);
-              (("","id"),"totally-random-id");
-              (("xml","lang"),"en"); ]) ^
-            X.to_string (X.Xml (("stream","features",[]),[
-              X.Xml (("","mechanisms",[
-                (("","xmlns"),"urn:ietf:params:xml:ns:xmpp-sasl")]),[
-                  X.Xml (("","mechanism",[]),[ X.Text "PLAIN" ])
+              (("","id"),id);
+              (("xml","lang"),"en"); ])
+      in respond response; Ok (my_addr, id)
+    in
+    ( stream_handshake "totally-random-id" >>= fun (my_addr,id) ->
+      respond_tree
+            (X.Xml (("stream","features",[]),[
+              X.Xml (("","mechanisms",[(("","xmlns"),Xmlns.sasl)]),[
+                  X.Xml (("","mechanism",[]),[ X.Text "PLAIN" ]);
+                  X.Xml (("","required",[]),[])
                 ])
-            ]))
-      in
-      respond response;
+            ]));
       expect P.tree >>= function
       | X.Xml ((_,tag,_),[X.Text garbled]) ->
         if tag <> "auth" then Error "Didn't get a <auth>" else
@@ -159,13 +167,34 @@ let sv_start () =
         let Ok (user,pass) = plain_auth_extract ungarbled in
         print_endline ("USERNAME: " ^ user);
         print_endline ("PASSWORD: " ^ pass);
-        respond_tree (X.Xml (("","success",[
-          (("","xmlns"),"urn:ietf:params:xml:ns:xmpp-sasl")
-          ]),[]));
-        expect A.(P.xml_decl *> P.tag_open)
-    ) |> function
-      | Ok _ -> print_endline "[SUCCESS]"; respond (X.to_string_close ("stream","stream"))
-      | Error err -> respond (X.to_string_close ("stream","stream")); failwith err
+        respond_tree (X.Xml (("","success",[(("","xmlns"),Xmlns.sasl)]),[]));
+        stream_handshake "totally-different-id" >>= fun (my_addr,id) ->
+        respond_tree (X.Xml (("stream","features",[]),[
+          X.Xml (("","bind",[
+            (("","xmlns"),Xmlns.bind)
+          ]),[
+            X.Xml (("","required",[]),[])
+          ])
+        ]));
+        expect P.tree >>= (fun f x -> print_endline (X.to_string x); f x) (function
+        | X.Xml (("","iq",[(("","type"),"set"); (("","id"),rqid)]),[
+            X.Xml (("","bind",[(("","xmlns"),"urn:ietf:params:xml:ns:xmpp-bind")]),[
+              X.Xml (("","resource",[]),[
+                X.Text resource
+              ])
+            ])
+          ]) -> let jid = format "%s@%s/%s" user my_addr resource in
+          respond_tree ( X.Xml (("","iq",[
+            (("","id"),rqid); (("","type"),"result")
+          ]),[
+            X.Xml (("","bind",[(("","xmlns"),Xmlns.bind)]),[
+              X.Xml (("","jid",[]),[X.Text jid])
+            ])
+          ]) );
+          expect P.tree
+    )) |> function
+    | Ok _ -> print_endline "[SUCCESS]"; respond (X.to_string_close ("stream","stream"))
+    | Error err -> respond (X.to_string_close ("stream","stream")); failwith err
   in
   Unix.(establish_server per_client (ADDR_INET (inet_addr_loopback,5222)))
 
