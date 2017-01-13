@@ -191,7 +191,12 @@ let sv_start () =
               X.Xml (("","jid",[]),[X.Text jid])
             ])
           ]) );
-          expect P.tree
+          expect P.tree >>= function
+          | X.Xml (("","iq",[_; (("","type"),"set"); (("","id"),rqid)]),[
+              X.Xml (("","session",_),[])
+            ]) ->
+            respond_tree ( X.Xml (("","iq",[(("","type"),"result"); (("","id"),rqid)]),[]));
+            expect P.tree
     )) |> function
     | Ok _ -> print_endline "[SUCCESS]"; respond (X.to_string_close ("stream","stream"))
     | Error err -> respond (X.to_string_close ("stream","stream")); failwith err

@@ -1,0 +1,93 @@
+stream_error lname =
+  let streams = namespace "urn:ietf:params:xml:ns:xmpp-streams" in
+  respond
+    <{stream}:error>
+    | <{streams}:{lname}>
+  respond </{stream}:stream>
+    close_connection
+
+establish_streams =
+  // $var, var will be exposed to the caller; #var will not
+  let stream = namespace "http://etherx.jabber.org/streams" as "stream" in
+  let client = namespace "jabber:client" in
+  // The [!] forces this to match only [<stream:stream ...>] with
+  // [xmlns:stream="http://etherx..."]. Otherwise, it would also match
+  // [<foo:stream ... xmlns:foo="http://etherx...">] etc...
+  // or [<stream ... xmlns="http://etherx...">]
+  // But this behaviour for the [<stream>] element is forbidden in XMPP
+  // So we use [{!stream}] instead of [{stream}]
+  expect
+    <{!stream}:stream $from? to=$my_addr version="1.0">
+  let cl_id = generate_id () in
+  // Here, since [stream] has a short name (as "stream"),
+  // {stream} will expand to "stream" and [xmlns:stream="http://etherx..."]
+  // will be inserted into the attributes
+  // [xmlns={client}] will expand to [xmlns="jabber:client"]
+  respond
+    <{stream}:stream from={my_addr} to={from} id={cl_id} version="1.0" xmlns={client}>
+  handle {stream}
+    stream_error "invalid-namespace"
+
+initial_features =
+  let #sasl = namespace "urn:ietf:params:xml:ns:xmpp-sasl" in
+  // Since [sasl] does not have a shortname, [{sasl}:mechanism] will just
+  // expand to [mechanism], and [xmlns="urn:ietf:params..."] will be inserted
+  respond
+    <{stream}:features>
+    | <{sasl}:mechanisms>
+    | | <mechanism>
+    | | | "PLAIN"
+    | | <required />
+  // The first line matches [<auth ...>] provided [xmlns="...xmpp-sasl"], or,
+  // [<foo:auth ... > provided [xmlns:foo="...xmpp-sasl"]
+  // (this should be inheritable to children as well)
+  expect
+    <{sasl}:auth mechanism="PLAIN">
+    | #garbled
+  handle expect <{sasl}:abort />
+    respond
+      <{sasl}:failure>
+      | <aborted />
+  let (user,#pass) = extract_plain (ungarble garbled) in
+  if authenticate (user,pass) then
+    respond
+      <{sasl}:success />
+      out: user
+  else
+    respond
+      <{sasl}:failure>
+      | <not-authorized />
+
+bind_resource =
+  let #bind = namespace "urn:ietf:params:xml:ns:xmpp-bind" in
+  respond
+    <{stream}:features>
+    | <{bind}:bind>
+    | | <required />
+  expect
+    <{client}:iq type="set" #id>
+    | <{bind}:bind>
+    | | <resource>
+    | | | $proposed_resource
+  let resource = assign_resource proposed_resource in
+  let jid = format "%s@%s/%s" user my_addr resource in
+  respond
+    <{client}:iq type="result" {id}>
+    | <{bind}:bind>
+    | | <jid>
+    | | | {jid}
+
+client_start =
+  establish_streams
+  initial_features
+  establish_streams
+  bind_resource
+  // At this point: have
+  // namespaces stream, client
+  // vars from, my_addr, cl_id, pass, resource, jid
+  let #sess = namespace "urn:ietf:params:xml:ns:xmpp-session" in
+  if accept
+    <{client}:iq type="set" #id>
+    | <{sess}:session />
+  then respond
+    <{client}:iq type="result" #id />
