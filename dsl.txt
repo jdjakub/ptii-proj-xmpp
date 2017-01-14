@@ -91,3 +91,14 @@ client_start =
     | <{sess}:session />
   then respond
     <{client}:iq type="result" #id />
+
+handle_stanza = function
+| <{client}:iq #type #id>
+  | #body
+  -> handle_iq type id body
+| <{client}:presence ...>
+  | #body
+  -> handle_presence #body
+| <{client}:message ...>
+  | #body
+  -> handle_message #body

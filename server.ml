@@ -196,6 +196,20 @@ let sv_start () =
               X.Xml (("","session",_),[])
             ]) ->
             respond_tree ( X.Xml (("","iq",[(("","type"),"result"); (("","id"),rqid)]),[]));
+            expect P.tree >>= function
+            | X.Xml (("","iq",[_;(("","type"),"get"); (("","id"),rqid)]),[
+              X.Xml (("","query",[(("","xmlns"),"jabber:iq:roster")]),[])
+            ]) ->
+            respond_tree ( X.Xml (("","iq",[(("","type"),"result");(("","id"),rqid)]),[
+              (*X.Xml (("","query",[(("","xmlns"),"jabber:iq:roster")]),[
+                X.Xml (("","item",[(("","jid"),"superphreak@smart.net")]),[]);
+                X.Xml (("","item",[(("","jid"),"scowlingmask@hackernet.det.usa")]),[]);
+                X.Xml (("","item",[(("","jid"),"disarray@scoria.net")]),[])
+              ])*)
+              X.Xml (("","error",[(("","type"),"cancel")]),[
+                X.Xml (("","service-unavailable",[(("","xmlns"),"urn:ietf:params:xml:ns:xmpp-stanzas")]),[])
+              ])
+            ]) );
             expect P.tree
     )) |> function
     | Ok _ -> print_endline "[SUCCESS]"; respond (X.to_string_close ("stream","stream"))
