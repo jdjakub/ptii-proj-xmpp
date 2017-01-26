@@ -15,10 +15,6 @@ module Xml = struct
     let compare = compare
   end)
 
-  module Stream = struct
-    type error = Bad_format | Bad_ns_prefix | Internal | Invalid_from | Invalid_ns | Invalid_xml | Not_authorized | Not_well_formed | Reset
-  end
-
   module P = struct
     open Angstrom
 
@@ -177,11 +173,77 @@ module Xml = struct
   let from_raw xml = from_raw_br
     (function | "" -> Some "" | _ -> None)
     "en" xml
+
+  module Check = struct
+    let tag t = function
+      | Xml xml ->
+        let t' = snd xml.tag in
+        if t' = t then Ok t else Error t'
+      | Text _ -> Error ("Expected '" ^ t ^ "' element, got content instead")
+
+    let attr k = function
+      | Xml xml -> (match xml.attr k with
+        | Some v -> Ok v
+        | None -> Error (format "Expected %s attribute in <%s> tag" k (snd xml.tag)) )
+      | Text _ -> Error "Expected XML, not content"
+
+    let child = function
+      | Xml xml -> ( match xml.child with
+        | [] -> Error (format "<%s> has no child XML" (snd xml.tag))
+        | ch :: _ -> Ok ch )
+      | Text _ -> Error "Expected XML, not content"
+
+    let text = function
+      | Xml _ -> Error "Expected content, not XML"
+      | Text (_,str) -> Ok str
+
+    (* f xml *> g xml *)
+    let ( *> ) f g xml = match f xml with
+      | Ok _ -> g xml
+      | Error e -> Error e
+
+    let ( <* ) f g = g *> f
+
+    let ( >*> ) f g xml =
+      Rresult.R.map (g xml) (f xml)
+
+    (* f xml >>= g xml ? requires g = fun xml v -> ... xml *)
+    let ( >>= ) f g xml = match f xml with
+      | Ok v -> g v xml
+      | Error e -> Error e
+
+    let ( >>| ) f g xml =
+      Rresult.R.map g (f xml)
+
+    let ( <|> ) f g xml = match f xml with
+    | Ok v -> Ok v
+    | Error _ -> match g xml with
+      | Ok v -> Ok v
+      | Error e -> Error e
+
+    let pure v = fun _ -> Ok v
+    let fail v = fun _ -> Error v
+
+    let qtag (pre,ns) t = tag t *> fun (Xml xml) ->
+      let pre' = fst xml.tag in
+      if pre = "" || pre = pre' then
+        match xml.namespace pre' with
+        | Some ns' -> if ns = ns' then Ok t else Error "Wrong namespace"
+        | None     -> Error "No such namespace"
+      else Error "Wrong tag prefix"
+
+    let attv k v = attr k >>= fun v' (Xml xml) ->
+      if v = v' then Ok v else
+        let t = snd xml.tag in
+        let error = format "Expected <%s ... %s=\"%s\" ...>, got %s=\"%s\"" t k v k v'  in
+        Error error
+  end
 end
 
 module Xmpp = struct
   let none = ("","")
   let streams = ("","urn:ietf:params:xml:ns:xmpp-streams")
+  let session = ("","urn:ietf:params:xml:ns:xmpp-session")
   let stanzas = ("","urn:ietf:params:xml:ns:xmpp-stanzas")
   let sasl    = ("","urn:ietf:params:xml:ns:xmpp-sasl")
   let bind    = ("","urn:ietf:params:xml:ns:xmpp-bind")
@@ -189,6 +251,39 @@ module Xmpp = struct
   let jclient  = ("client","jabber:client")
   let jserver  = ("server","jabber:server")
   let jroster  = ("","jabber:iq:roster")
+
+  module Stream = struct
+  end
+
+  module Stanza = struct
+    type error = string
+    type query = Xml.xml_node
+
+    module Iq = struct
+      type iq_type =
+      | Get of query
+      | Set of query
+      | Result of query option
+      | Error of query option * error
+
+      type t = {
+        req_id : string;
+        iq_type : iq_type;
+      }
+
+      let of_xml =
+      let open Xml.Check in
+        tag "iq" *> attr "id" >>= fun req_id ->
+          attr "type" >>= (function
+          | "get" -> child >>| fun ch -> Get ch
+          | "set" -> child >>| fun ch -> Set ch
+          | "result" -> fun xml -> Ok (Result (Rresult.R.to_option (child xml)))
+          | "error" -> fun xml -> Ok (Error (Rresult.R.to_option (child xml),"?"))
+          | _ -> fail "bad-request") >>| fun iq_type -> { req_id; iq_type }
+
+    end
+
+  end
 end
 
 open Rresult
@@ -227,9 +322,8 @@ let sv_start () =
     let respond_tree xml = respond (Raw.to_string xml) in
     let expect p = expect (String.make 2000 '.') (input from_ie) respond p in
     let stream_handshake id =
-      expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>= fun (X.Xml xml) ->
-      if xml.tag <> ("stream","stream") then Error "Didn't get a <stream>" else
-      match xml.attr "to" with | None -> Error "No 'to' address" | Some my_addr ->
+      expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
+        Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
       let response = Raw.(to_string_open (xml_d Xmpp.jstream "stream" [
         "xmlns", snd Xmpp.jclient;
         "version", "1.0"; "from", my_addr; "id", id;
@@ -243,13 +337,12 @@ let sv_start () =
           xml_n "required" [] []
         ]
       ]);
-      expect P.tree >>| X.from_raw >>= fun (X.Xml xml) ->
-      if snd xml.tag <> "auth" then Error "Didn't get a <auth>" else
-      match xml.attr "mechanism" with None -> Error "No auth mechanism" | Some "PLAIN" ->
-      match xml.child with [] -> Error "Empty credentials" | (X.Text (_,garbled)) :: _ ->
+      expect P.tree >>| X.from_raw >>=
+        Xml.Check.(qtag Xmpp.sasl "auth" *> attv "mechanism" "PLAIN" *> child) >>=
+        Xml.Check.text >>= fun garbled ->
 
       let ungarbled = B64.decode garbled in
-      let Ok (user,pass) = plain_auth_extract ungarbled in
+      plain_auth_extract ungarbled >>= fun (user,pass) ->
       print_endline ("USERNAME: " ^ user);
       print_endline ("PASSWORD: " ^ pass);
       respond_tree Raw.(xml Xmpp.sasl "success" [] []);
@@ -258,44 +351,42 @@ let sv_start () =
       respond_tree Raw.(xml Xmpp.jstream "features" [] [
         xml Xmpp.bind "bind" [] [ xml_n "required" [] [] ]
       ]);
-      expect P.tree >>| X.from_raw >>= fun (X.Xml xml) ->
-      if snd xml.tag <> "iq" then Error "Not iq" else
-      match xml.attr "type" with None -> Error "No type attrib" | Some "set" ->
-      match xml.attr "id" with None -> Error "No iq id" | Some rqid ->
-      match xml.child with [ X.Xml xml ] ->
-      if snd xml.tag <> "bind" then Error "Not bind" else
-      match xml.child with [ X.Xml xml ] ->
-      if snd xml.tag <> "resource" then Error "Not resource" else
-      match xml.child with [ X.Text (_,resource) ] ->
+      expect P.tree >>| X.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+      fun { req_id; iq_type=(Set tag_bind) } ->
+        (tag_bind |> Xml.Check.(qtag Xmpp.bind "bind" *> child)) >>=
+      Xml.Check.(tag "resource" *> child) >>= Xml.Check.text >>=
+      fun resource ->
 
       let jid = format "%s@%s/%s" user my_addr resource in
-      respond_tree Raw.(xml_n "iq" [ "id", rqid; "type", "result" ] [
+      respond_tree Raw.(xml_n "iq" [ "id", req_id; "type", "result" ] [
         xml Xmpp.bind "bind" [] [
           xml_n "jid" [] [ text jid ]
         ]
       ]);
-      expect P.tree >>| X.from_raw >>= fun (X.Xml xml) ->
+
       (* Assuming it was the iq type=set { session } thing, which Psi does *)
-      match xml.attr "id" with None -> Error "No iq id!" | Some rqid ->
+      expect P.tree >>| X.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+      fun { req_id; iq_type=(Set query) } ->
+        (query |> Xml.Check.qtag Xmpp.session "session") >>= fun _ ->
 
-      respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", rqid ] []);
-      expect P.tree >>| X.from_raw >>= fun (X.Xml xml) ->
+      respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", req_id ] []);
       (* Assuming iq type=get { jroster:query } *)
-      match xml.attr "id" with None -> Error "No iq id!!" | Some rqid ->
+      expect P.tree >>| X.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+      fun { req_id; iq_type=(Get query) } ->
+        (query |> Xml.Check.qtag Xmpp.jroster "query") >>= fun _ ->
 
-      respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", rqid ] [
-        xml Xmpp.jroster "query" [] [
+      respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", req_id ] [
+        (*xml Xmpp.jroster "query" [] [
           xml_n "item" [ "jid", "superphreak@smart.net"; "name", "Superphreak" ] [];
           xml_n "item" [ "jid", "scowlingmask@hackernet.det.usa"; "name", "UNKNOWN" ] [];
           xml_n "item" [ "jid", "disarray@scoria.tk"; "name", "DisArray" ] [];
-        ]
-        (*
+        ]*)
+
         xml_n "error" [ "type", "cancel" ] [
           xml Xmpp.stanzas "service-unavailable" [] []
         ]
-        *)
-      ]);
-      expect P.tree
+        
+      ]); expect P.tree
     ) |> function
     | Ok _ -> print_endline "[SUCCESS]"; (* respond "</stream:stream>" *)
     | Error err -> respond "</stream:stream>"; failwith err
