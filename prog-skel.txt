@@ -1,0 +1,37 @@
+Joel Jakubovic
+An XMPP Server Implementation in OCaml
+Supervisor: Richard Mortier
+DoS: Austin Donnelly
+Overseers: Sean Holden, Simone Teufel
+
+What work has been completed, accomplished? How does it relate to the timetable?
+
+My first timetable item involved making basic client / server demos, as a starting point. I did so, but decided that choosing libraries for threading etc. would be better done after I had gained an understanding of XMPP; from the small amount I knew at the time, there was much to do initially that did not involve threads.
+
+I had study the XMPP protocol. First, I looked to the specification, RFC 6120, for an introduction. I quickly found that it was much too detailed, turning to "XMPP: The Definitive Guide" to get started. Still, I realised that I would not get through even the core of XMPP in a week or two, so I focused on the immediate necessity, stream establishment.
+
+For this, I needed an XML parser. I decided to write my own because I could not find existing ones for OCaml, and did not want to spend time learning how to use someone else's library. I was already familiar with the Angstrom parser combinator library, so I used it.
+
+I was having a lot of trouble developing in the abstract from reference documents, so I began using the client software Psi to give a direction for me to move in. As I used Psi it became apparent that this client software was well-written; it also became clear that it would be infeasible to try and account for all numerous error cases in the manner set out in the RFCs. I was already spending too much time on this aspect, but this was detracting from the actual features so I had to strike out dealing with most of the potential errors. The only ones I cannot ignore are things like <unsupported-feature>, i.e. default replies to stanzas relying on non-core functionality, as the client needs to know not to proceed further in such requests.
+
+One of my reasons for not using an existing XML parser was that it would be too complex for my needs. However, I underestimated the importance of namespaces in XMPP and had handled them in an ad-hoc manner. There were difficulties because of the simplicity of my XML layer; in particular, the code for extraction of tags, attributes, children etc. became quite obfuscated due to the amount of pattern matching and error checking involved. To remedy this, I introduced a higher-level XML layer with combinators for the purposes of extracting information, handling the errors implicitly, monad-style. I also added some helpers for generating XML in responses, which greatly improved the readability of the code and let me get on with actual features.
+
+---
+
+Initially, while perusing RFC 6120 and "XMPP: The Definitive Guide", it was clear that I would not get through understanding even the core of XMPP in the two weeks I had allotted, so I focused on the first step, stream establishment.
+
+This required an XML parser. I decided to write my own because I could not find existing ones for OCaml, and expected to only need simple features. I was already familiar with the Angstrom parser combinator library, so I used it. Over time, I had to augment the XML layer with higher-level constructs and helper modules, for the sake of code comprehension.
+
+I was having a lot of trouble developing in the abstract from the documents, so I began using the Psi client to give a direction to move in. As I used Psi it became apparent that progress would only happen if I did not insist on accounting for the numerous error cases set out in the RFCs. I was already spending too much time on that, and to keep moving along, I had to strike this out - the only errors I have not been able to omit are to handle unsupported features that Psi requests.
+
+The server currently accepts incoming connections, establishes XML streams, 'authenticates' using SASL/PLAIN, allows the client to bind a resource, and waits for stanzas. I had to forgo using an encrypted connection, complex authentication mechanism, and actual user accounts as this would impede getting to message and presence delivery. However, I needed to do some 'token' authentication to comply with Psi.
+
+I'd planned to implement the entire semantics of routing message and presence to take two weeks before the break. This was greatly underestimated, and I currently have none of this functionality. I had also scheduled roster management for later this term; at the time I hadn't found out that it was central, so that was shifted into this block.
+
+I want to begin performance evaluation soon, so I need to scale back. I am abandoning server federation, allowing me to focus on far simpler delivery between my server's directly connected clients. Since the areas of interest to performance are direct delivery of messages and broadcasting presence, I will develop for static rosters, where they and the subscriptions are fixed during the runtime of the application. This will let me omit supporting roster C/R/U/D operations, which are not relevant to such testing. Because I am omitting these 'core' features for the sake of progress, it will not make much sense to evaluate conformance to the specification.
+
+The new plan is as follows:
+
+Week 3: Write and rehearse presentation; Add global roster collection and functionality to load from file on startup. Implement mechanism for client threads to forward messages to each other.
+Week 4: Implement presence semantics for clients connecting / disconnecting (initial presence, presence probes. No delayed delivery) Implement message delivery for simple messages to clients that are online (no delayed delivery)
+Week 5:

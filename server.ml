@@ -142,7 +142,7 @@ module Xml = struct
     namespace : string -> string option;
     lang  : lang;
     child : xml_node list;
-    orig  : string;
+    orig  : P.Raw.xml;
   }
 
   let rec from_raw_br namespace lang = function
@@ -167,7 +167,7 @@ module Xml = struct
     Xml {
       tag = (prefix,tag); attr; attr_full; namespace; lang;
       child = List.map (from_raw_br namespace lang) children;
-      orig = P.Raw.to_string orig;
+      orig;
     }
 
   let from_raw xml = from_raw_br
@@ -187,10 +187,22 @@ module Xml = struct
         | None -> Error (format "Expected %s attribute in <%s> tag" k (snd xml.tag)) )
       | Text _ -> Error "Expected XML, not content"
 
+    let attr_opt k = function
+      | Xml xml -> Ok (xml.attr k)
+      | Text _ -> Error "Expected XML, not content"
+
     let child = function
       | Xml xml -> ( match xml.child with
         | [] -> Error (format "<%s> has no child XML" (snd xml.tag))
-        | ch :: _ -> Ok ch )
+        | ch::_ -> Ok ch )
+      | Text _ -> Error "Expected XML, not content"
+
+    let children = function
+      | Xml xml -> Ok xml.child
+      | Text _ -> Error "Expected XML, not content"
+
+    let orig = function
+      | Xml xml -> Ok xml.orig
       | Text _ -> Error "Expected XML, not content"
 
     let text = function
@@ -252,14 +264,93 @@ module Xmpp = struct
   let jserver  = ("server","jabber:server")
   let jroster  = ("","jabber:iq:roster")
 
+  module Roster = struct
+    module R = Map.Make (struct type t = string let compare = compare end)
+    module M = Map.Make (struct type t = string let compare = compare end)
+
+    type item = {
+      jid : string;
+      name : string;
+      recv_ok : bool;
+      send_ok : bool;
+      groups : string list;
+    }
+
+    let to_xml item =
+      let sub = match (item.recv_ok, item.send_ok) with
+        | (false,false) -> "none"
+        | (false,true) -> "from"
+        | (true,false) -> "to"
+        | (true,true) -> "both"
+      in
+      Xml.P.Raw.xml_n "item" [ "jid", item.jid; "name", item.name; "subscription", sub ] []
+
+    module Rr = Rresult
+
+    let item_of_xml =
+      let open Xml.Check in
+      tag "item" *> attr "jid" >>= fun jid ->
+        attr "name" >>= fun name ->
+          attr_opt "subscription" >>= ( function
+          | None        -> pure (false,false)
+          | Some "none" -> pure (false,false)
+          | Some "to"   -> pure (true,false)
+          | Some "from" -> pure (false,true)
+          | Some "both" -> pure (true,true)
+          | _ -> fail "Unknown subscription type" ) >>=
+      fun (recv_ok,send_ok) ->
+        pure { jid; name; recv_ok; send_ok; groups=[] } (* no groups *)
+
+    type roster = item R.t
+
+    let rosters = ref M.empty
+
+    let get name = try Ok (M.find name !rosters)
+      with Not_found -> Error ("No such roster loaded: " ^ name)
+
+    let roster_from_in_ch in_ch =
+      let open Angstrom.Buffered in
+      let buf = String.make 2000 '.' in
+      let rec iter = function
+        | Partial next ->
+            let len = input in_ch buf 0 2000 in
+            let inp = String.sub buf 0 len in
+            print_endline ("[ROSTER]: " ^ inp ^ "[/ROSTER]");
+            if len = 0 then iter (next (`Eof))
+            else iter (next (`String inp))
+        | Fail (unc,strs,str) ->
+            Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
+        | Done (unc,result) ->
+            Ok result (* THROWS AWAY UNCONSUMED!!! *)
+      in Rr.R.(
+      iter (parse Angstrom.(many (Xml.P.tree >>| Xml.from_raw))) >>=
+        let process rstr_res tree = rstr_res >>= fun rstr -> item_of_xml tree
+          >>= fun item -> Ok (R.add item.jid item rstr)
+        in
+        List.fold_left process (Ok R.empty) )
+
+    let load_from_storage name =
+      try M.find name !rosters; Ok ()
+      with Not_found ->
+        rosters := M.add name R.empty !rosters;
+        try
+          let in_ch = open_in ("roster/" ^ name ^ ".xml") in
+          Rr.( roster_from_in_ch in_ch >>| fun r ->
+           rosters := M.add name r !rosters )
+        with Sys_error _ -> Error ("File roster/" ^ name ^ ".xml not found")
+
+  end
+
   module Stream = struct
   end
 
   module Stanza = struct
     type error = string
-    type query = Xml.xml_node
+
 
     module Iq = struct
+
+      type query = Xml.xml_node
       type iq_type =
       | Get of query
       | Set of query
@@ -283,10 +374,17 @@ module Xmpp = struct
 
     end
 
+    module Presence = struct
+
+    end
   end
 end
 
 open Rresult
+
+let (<|>) ex ey = match ex with
+  | Ok x -> Ok x
+  | Error e -> ey
 
 module A = Angstrom
 module X = Xml
@@ -320,7 +418,8 @@ let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
-    let expect p = expect (String.make 2000 '.') (input from_ie) respond p in
+    let buf = String.make 2000 '.' in
+    let expect p = expect buf (input from_ie) respond p in
     let stream_handshake id =
       expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
         Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
@@ -330,7 +429,7 @@ let sv_start () =
       ] []))
       in respond response; Ok (my_addr, id)
     in
-    ( stream_handshake "totally-random-id" >>= fun (my_addr,id) ->
+    ( stream_handshake "random-id" >>= fun (my_addr,id) ->
       respond_tree Raw.(xml Xmpp.jstream "features" [] [
         xml Xmpp.sasl "mechanisms" [] [
           xml_n "mechanism" [] [ text "PLAIN" ];
@@ -347,10 +446,13 @@ let sv_start () =
       print_endline ("PASSWORD: " ^ pass);
       respond_tree Raw.(xml Xmpp.sasl "success" [] []);
 
-      stream_handshake "totally-different-id" >>= fun (my_addr,id) ->
+      Xmpp.Roster.load_from_storage user >>= fun _ ->
+
+      stream_handshake "different-id" >>= fun (my_addr,id) ->
       respond_tree Raw.(xml Xmpp.jstream "features" [] [
         xml Xmpp.bind "bind" [] [ xml_n "required" [] [] ]
       ]);
+
       expect P.tree >>| X.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
       fun { req_id; iq_type=(Set tag_bind) } ->
         (tag_bind |> Xml.Check.(qtag Xmpp.bind "bind" *> child)) >>=
@@ -375,18 +477,60 @@ let sv_start () =
       fun { req_id; iq_type=(Get query) } ->
         (query |> Xml.Check.qtag Xmpp.jroster "query") >>= fun _ ->
 
+      Xmpp.Roster.get user >>= fun roster ->
+      let items = Xmpp.Roster.R.bindings roster in
+      let items = List.map (fun (_,item) -> Xmpp.Roster.to_xml item) items in
       respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", req_id ] [
-        (*xml Xmpp.jroster "query" [] [
-          xml_n "item" [ "jid", "superphreak@smart.net"; "name", "Superphreak" ] [];
-          xml_n "item" [ "jid", "scowlingmask@hackernet.det.usa"; "name", "UNKNOWN" ] [];
-          xml_n "item" [ "jid", "disarray@scoria.tk"; "name", "DisArray" ] [];
+        xml Xmpp.jroster "query" [] items
+        (*[
+          xml_n "item" [ "jid", "superphreak@smart.net"; "name", "Superphreak"; "subscription", "both" ] [];
+          xml_n "item" [ "jid", "scowlingmask@hackernet.det.usa"; "name", "UNKNOWN"; "subscription", "both" ] [];
+          xml_n "item" [ "jid", "disarray@scoria.tk"; "name", "DisArray"; "subscription", "both" ] [];
         ]*)
-
+        (*
         xml_n "error" [ "type", "cancel" ] [
           xml Xmpp.stanzas "service-unavailable" [] []
-        ]
-        
-      ]); expect P.tree
+        ]*)
+
+      ]); expect P.tree >>| X.from_raw >>=
+        Xml.Check.(tag "presence" *> orig) >>= function
+      | Raw.Text _ -> Error "Presence: no children"
+      | Raw.Branch (_,chs) ->
+
+      respond_tree Raw.(xml_n "presence" [ "from", jid; "to", jid ] chs);
+
+      let rec accept () =
+        let handle_iq = function
+          | _ -> Error (Raw.(xml_n "error" [ "type", "cancel" ] [
+            xml Xmpp.stanzas "feature-not-implemented" [] []
+          ]))
+        in
+        let handle_presence = function
+          | _ -> Error "Presence not yet impl'd"
+        in
+        let handle_message = function
+          | _ -> Error "Messages not yet impl'd"
+        in
+        (expect P.tree >>| X.from_raw >>= fun raw ->
+          match (raw |> Xmpp.Stanza.Iq.of_xml) with
+          | Ok { req_id; iq_type } ->
+            let (ret_type, body) = match handle_iq iq_type with
+              | Ok inner -> ("result", inner)
+              | Error err -> ("error", err)
+            in
+            Ok (respond_tree
+              Raw.(xml_n "iq" [ "type", ret_type; "id", req_id ] [ body ]))
+          | Error _ ->
+          match (raw |> Xml.Check.(tag "presence" *> children)) with
+          | Ok chs -> handle_presence chs
+          | Error _ ->
+          match (raw |> Xml.Check.(tag "message" *> children)) with
+          | Ok chs -> handle_message chs
+          | Error e -> Error e) |> function
+            | Ok _ -> accept ()
+            | Error e -> Error e
+      in
+      accept ()
     ) |> function
     | Ok _ -> print_endline "[SUCCESS]"; (* respond "</stream:stream>" *)
     | Error err -> respond "</stream:stream>"; failwith err
