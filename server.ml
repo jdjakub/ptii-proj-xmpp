@@ -123,7 +123,7 @@ module Xml = struct
       (tag_close tagname *> return []) <|>
         (t_rec >>= fun tree -> b_rec >>| fun trees -> tree::trees) )
 
-    (* text | < tag attr_val* ( /> | > branch(tag) ) *)
+    (* < tag attr_val* ( /> | > branch(tag) ) | text *)
     let tree = fix ( fun t_rec ->
       ( tok_langle *> qual_name >>= fun (ns,id) ->
               lift2 (fun attrs children -> Raw.Branch ((ns, id, attrs), children))
@@ -323,11 +323,11 @@ module Xmpp = struct
         | Done (unc,result) ->
             Ok result (* THROWS AWAY UNCONSUMED!!! *)
       in Rr.R.(
-      iter (parse Angstrom.(many (Xml.P.tree >>| Xml.from_raw))) >>=
-        let process rstr_res tree = rstr_res >>= fun rstr -> item_of_xml tree
-          >>= fun item -> Ok (R.add item.jid item rstr)
+      iter (parse Angstrom.(Xml.P.tree >>| Xml.from_raw)) >>= Xml.Check.children >>=
+        let process rstr_res tree = rstr_res >>= fun (i,rstr) -> print_endline (string_of_int i); item_of_xml tree
+          >>= fun item -> Ok (i+1, R.add item.jid item rstr)
         in
-        List.fold_left process (Ok R.empty) )
+        List.fold_left process (Ok (1,R.empty)) )
 
     let load_from_storage name =
       try M.find name !rosters; Ok ()
@@ -335,7 +335,8 @@ module Xmpp = struct
         rosters := M.add name R.empty !rosters;
         try
           let in_ch = open_in ("roster/" ^ name ^ ".xml") in
-          Rr.( roster_from_in_ch in_ch >>| fun r ->
+          Rr.( roster_from_in_ch in_ch >>| fun (_,r) ->
+           close_in in_ch;
            rosters := M.add name r !rosters )
         with Sys_error _ -> Error ("File roster/" ^ name ^ ".xml not found")
 
