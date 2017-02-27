@@ -252,6 +252,60 @@ module Xml = struct
   end
 end
 
+module Dispatch = struct
+  module M = Map.Make (struct type t = string let compare = compare end) (* jid -> fwd_queue *)
+
+  let queues = ref M.empty
+
+  let qs_lock = Mutex.create ()
+
+  let fmt = Printf.sprintf
+  let prn_lock = Mutex.create ()
+  let print str =
+    Mutex.lock prn_lock;
+      print_endline str;
+    Mutex.unlock prn_lock
+
+  let client_connected name =
+    let q = Queue.create () in
+    let q_mon = Mutex.create () in
+    let avail = Condition.create () in
+    Mutex.lock q_mon;
+      queues := M.add name (q,q_mon,avail) !queues;
+    Mutex.unlock q_mon; print (fmt "Client connected: %s" name);
+    (q,q_mon,avail)
+
+  let client_disconnected name =
+    Mutex.lock qs_lock;
+      queues := M.remove name !queues;
+    Mutex.unlock qs_lock; print (fmt "Client disconnected: %s" name)
+
+  (*
+    worker thread *atomically dequeues* (blocking if empty)
+    push thread *atomically enqueues*
+  *)
+
+  let dequeue_work (q,mon,avail) =
+    Mutex.lock mon;
+      while Queue.length q = 0 do
+        Condition.wait avail mon;
+      done;
+      let work = Queue.take q in
+    Mutex.unlock mon;
+    work
+
+  let dispatch name work =
+    try
+      let (q,q_mon,avail) = M.find name !queues in
+      Mutex.lock q_mon;
+        Queue.add work q;
+        Condition.signal avail;
+      Mutex.unlock q_mon;
+      (*print (fmt "%s: %d" name work)*)
+    with Not_found -> () (*print (fmt "Dropped %s: %d" name work )*) (* Drop the packet *)
+
+end
+
 module Xmpp = struct
   let none = ("","")
   let streams = ("","urn:ietf:params:xml:ns:xmpp-streams")
@@ -265,8 +319,8 @@ module Xmpp = struct
   let jroster  = ("","jabber:iq:roster")
 
   module Roster = struct
-    module R = Map.Make (struct type t = string let compare = compare end)
-    module M = Map.Make (struct type t = string let compare = compare end)
+    module R = Map.Make (struct type t = string let compare = compare end) (* jid -> item *)
+    module M = Map.Make (struct type t = string let compare = compare end) (* jid -> roster *)
 
     type item = {
       jid : string;
@@ -342,12 +396,8 @@ module Xmpp = struct
 
   end
 
-  module Stream = struct
-  end
-
   module Stanza = struct
     type error = string
-
 
     module Iq = struct
 
@@ -483,16 +533,6 @@ let sv_start () =
       let items = List.map (fun (_,item) -> Xmpp.Roster.to_xml item) items in
       respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", req_id ] [
         xml Xmpp.jroster "query" [] items
-        (*[
-          xml_n "item" [ "jid", "superphreak@smart.net"; "name", "Superphreak"; "subscription", "both" ] [];
-          xml_n "item" [ "jid", "scowlingmask@hackernet.det.usa"; "name", "UNKNOWN"; "subscription", "both" ] [];
-          xml_n "item" [ "jid", "disarray@scoria.tk"; "name", "DisArray"; "subscription", "both" ] [];
-        ]*)
-        (*
-        xml_n "error" [ "type", "cancel" ] [
-          xml Xmpp.stanzas "service-unavailable" [] []
-        ]*)
-
       ]); expect P.tree >>| X.from_raw >>=
         Xml.Check.(tag "presence" *> orig) >>= function
       | Raw.Text _ -> Error "Presence: no children"
@@ -500,41 +540,61 @@ let sv_start () =
 
       respond_tree Raw.(xml_n "presence" [ "from", jid; "to", jid ] chs);
 
-      let rec accept () =
-        let handle_iq = function
-          | _ -> Error (Raw.(xml_n "error" [ "type", "cancel" ] [
-            xml Xmpp.stanzas "feature-not-implemented" [] []
-          ]))
-        in
-        let handle_presence = function
-          | _ -> Error "Presence not yet impl'd"
-        in
-        let handle_message = function
-          | _ -> Error "Messages not yet impl'd"
-        in
+      let work_queue = Dispatch.client_connected user in
+      let stream_lock = Mutex.create () in
+      let worker = Thread.create (fun workq ->
+        while true do
+          match Dispatch.dequeue_work workq with
+          | xml ->
+            Mutex.lock stream_lock;
+              respond_tree xml;
+            Mutex.unlock stream_lock
+        done
+      ) work_queue in
+
+      let handle_iq = function
+        | _ -> Error (Raw.(xml_n "error" [ "type", "cancel" ] [
+          xml Xmpp.stanzas "feature-not-implemented" [] []
+        ]))
+      in
+      let handle_presence = function
+        | _ -> Error "Presence not yet impl'd"
+      in
+      let handle_message = function
+        | _ -> Error "Messages not yet impl'd"
+      in
+      let finished = ref false in
+      let res = ref (Ok ()) in
+      while !finished = false do
         (expect P.tree >>| X.from_raw >>= fun raw ->
-          match (raw |> Xmpp.Stanza.Iq.of_xml) with
-          | Ok { req_id; iq_type } ->
+          ((raw |> Xmpp.Stanza.Iq.of_xml) >>= fun { req_id; iq_type } ->
             let (ret_type, body) = match handle_iq iq_type with
               | Ok inner -> ("result", inner)
               | Error err -> ("error", err)
             in
-            Ok (respond_tree
-              Raw.(xml_n "iq" [ "type", ret_type; "id", req_id ] [ body ]))
-          | Error _ ->
-          match (raw |> Xml.Check.(tag "presence" *> children)) with
-          | Ok chs -> handle_presence chs
-          | Error _ ->
-          match (raw |> Xml.Check.(tag "message" *> children)) with
-          | Ok chs -> handle_message chs
-          | Error e -> Error e) |> function
-            | Ok _ -> accept ()
-            | Error e -> Error e
-      in
-      accept ()
+            Ok (let respns =
+              Raw.(xml_n "iq" [ "type", ret_type; "id", req_id ] [ body ])
+              in Dispatch.dispatch user respns)
+          ) <|>
+          ((raw |> Xml.Check.(tag "presence" *> children)) >>= fun chs ->
+            handle_presence chs
+          ) <|>
+          ((raw |> Xml.Check.(tag "message" *> children)) >>= fun chs ->
+            handle_message chs
+          ) ) |> function
+            | Ok _ -> ()
+            | err -> res := err; finished := true
+      done;
+      Dispatch.client_disconnected user; (* remove dispatch access as soon as possible *)
+      Mutex.lock stream_lock; (* make sure worker is no longer writing to stream *)
+        Thread.kill worker;
+      Mutex.unlock stream_lock;
+      respond "</stream:stream>";
+      !res
     ) |> function
     | Ok _ -> print_endline "[SUCCESS]"; (* respond "</stream:stream>" *)
-    | Error err -> respond "</stream:stream>"; failwith err
+    | Error err -> respond "</stream:stream>"; failwith err;
+
   in
   Unix.(establish_server per_client (ADDR_INET (inet_addr_loopback,5222)))
 
