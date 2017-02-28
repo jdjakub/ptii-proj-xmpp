@@ -270,12 +270,17 @@ module Dispatch = struct
     let q = Queue.create () in
     let q_mon = Mutex.create () in
     let avail = Condition.create () in
+    let fin = ref false in
     Mutex.lock q_mon;
-      queues := M.add name (q,q_mon,avail) !queues;
+      queues := M.add name (q,q_mon,avail,fin) !queues;
     Mutex.unlock q_mon; print (fmt "Client connected: %s" name);
-    (q,q_mon,avail)
+    (q,q_mon,avail,fin)
 
   let client_disconnected name =
+    try
+      let (_,_,avail,fin) = M.find name !queues in
+      fin := true; Condition.signal avail
+    with Not_found -> ();
     Mutex.lock qs_lock;
       queues := M.remove name !queues;
     Mutex.unlock qs_lock; print (fmt "Client disconnected: %s" name)
@@ -285,18 +290,19 @@ module Dispatch = struct
     push thread *atomically enqueues*
   *)
 
-  let dequeue_work (q,mon,avail) =
+  let dequeue_work (q,mon,avail,fin) =
     Mutex.lock mon;
-      while Queue.length q = 0 do
-        Condition.wait avail mon;
-      done;
-      let work = Queue.take q in
-    Mutex.unlock mon;
-    work
+    while Queue.length q = 0 && !fin = false do
+      Condition.wait avail mon;
+    done;
+    if !fin = true then
+      (Mutex.unlock mon; print "Interrupted"; None)
+    else let work = Queue.take q in
+      (Mutex.unlock mon; Some work)
 
   let dispatch name work =
     try
-      let (q,q_mon,avail) = M.find name !queues in
+      let (q,q_mon,avail,_) = M.find name !queues in
       Mutex.lock q_mon;
         Queue.add work q;
         Condition.signal avail;
@@ -543,12 +549,14 @@ let sv_start () =
       let work_queue = Dispatch.client_connected user in
       let stream_lock = Mutex.create () in
       let worker = Thread.create (fun workq ->
-        while true do
+        let finish = ref false in
+        while !finish = false do
           match Dispatch.dequeue_work workq with
-          | xml ->
+          | Some xml ->
             Mutex.lock stream_lock;
               respond_tree xml;
             Mutex.unlock stream_lock
+          | None -> finish := true
         done
       ) work_queue in
 
@@ -586,10 +594,7 @@ let sv_start () =
             | err -> res := err; finished := true
       done;
       Dispatch.client_disconnected user; (* remove dispatch access as soon as possible *)
-      Mutex.lock stream_lock; (* make sure worker is no longer writing to stream *)
-        Thread.kill worker;
-      Mutex.unlock stream_lock;
-      respond "</stream:stream>";
+      Thread.join worker;
       !res
     ) |> function
     | Ok _ -> print_endline "[SUCCESS]"; (* respond "</stream:stream>" *)
