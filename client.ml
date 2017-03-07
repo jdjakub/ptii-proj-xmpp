@@ -4,6 +4,9 @@ open Rresult
 
 module Raw = Xml.P.Raw
 
+let password = "pass"
+let resource = "res"
+
 class client user svname =
 let (in_c,out_c) = open_connection (ADDR_INET (inet_addr_loopback,5222)) in
 object (self)
@@ -30,7 +33,33 @@ object (self)
     self#expect Xml.P.tree >>| Xml.from_raw >>=
       Xml.Check.(tag "features") >>= fun _ ->
     self#respond_tree Raw.(xml Xmpp.sasl "auth" [ "mechanism", "PLAIN" ] [
+      text ("\x00" ^ user ^ "\x00" ^ password)
+    ]);
+    self#expect Xml.P.tree >>| Xml.from_raw >>=
+      Xml.Check.(tag "success") >>= fun _ ->
 
+    self#establish_streams;
+    self#expect Xml.P.tree >>| Xml.from_raw >>=
+      Xml.Check.(tag "features") >>= fun _ ->
+    self#respond_tree Raw.(xml_n "iq" [ "type", "set"; "id", "iq-bind" ] [
+      xml Xmpp.bind "bind" [] [
+        xml_n "resource" [] [
+          text resource
+        ]
+      ]
+    ]);
+    self#expect Xml.P.tree >>| Xml.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+    fun { req_id="iq-bind"; iq_type=(Result (Some xml)) } ->
+
+    self#respond_tree Raw.(xml_n "iq" [ "type", "set"; "id", "iq-sess" ] [
+      xml Xmpp.session "session" [] []
+    ]);
+
+    self#expect Xml.P.tree >>| Xml.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+    fun { req_id="iq-sess"; iq_type=(Result None) } ->
+
+    self#respond_tree Raw.(xml_n "iq" [ "type", "get"; "id", "iq-rost" ] [
+      xml Xmpp.jroster "query" [] []
     ]); Ok ()
 
 end
