@@ -33,7 +33,7 @@ object (self)
     self#expect Xml.P.tree >>| Xml.from_raw >>=
       Xml.Check.(tag "features") >>= fun _ ->
     self#respond_tree Raw.(xml Xmpp.sasl "auth" [ "mechanism", "PLAIN" ] [
-      text ("\x00" ^ user ^ "\x00" ^ password)
+      text (B64.encode ("\x00" ^ user ^ "\x00" ^ password))
     ]);
     self#expect Xml.P.tree >>| Xml.from_raw >>=
       Xml.Check.(tag "success") >>= fun _ ->
@@ -61,6 +61,30 @@ object (self)
     self#respond_tree Raw.(xml_n "iq" [ "type", "get"; "id", "iq-rost" ] [
       xml Xmpp.jroster "query" [] []
     ]); Ok ()
+
+    self#expect Xml.P.tree >>| Xml.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+    fun { req_id="iq-rost"; iq_type=(Result (Some xml)) } ->
+
+    xml |> Xml.Check.(qtag Xmpp.jroster "query" *> children) >>= fun items ->
+
+    (* <item jid name subscription /> *)
+
+    self#respond_tree Raw.(xml_n "presence" [] []);
+
+    List.map Xmpp.Roster.item_of_xml items
+
+  method message recpt body =
+    self#respond_tree
+      Raw.(xml_n "message" [ "type", "chat"; "to", recpt ^ "@" ^ svname ] [
+        body
+      ])
+
+  method message_t recpt body =
+    self#message recpt Raw.(text body)
+
+  method disconnect =
+    self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] [])
+    self#respond "</stream:stream>"
 
 end
 
