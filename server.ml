@@ -169,7 +169,12 @@ let sv_start () =
       | Raw.Text _ -> Error "Presence: no children"
       | Raw.Branch (_,chs) ->
 
-      respond_tree Raw.(xml_n "presence" [ "from", jid; "to", jid ] chs);
+      respond_tree Raw.(xml_n "presence" [ "from", raw_jid; "to", jid ] chs);
+
+      (* Notify everyone that X is online *)
+      let pres = Raw.(xml_n "presence" [ "from", raw_jid ] chs) in
+      List.iter (fun { jid; name; recv_ok; send_ok } ->
+        if send_ok then Dispatch.dispatch raw_jid pres else () ) items;
 
       let work_queue = Dispatch.client_connected raw_jid in
       let stream_lock = Mutex.create () in
