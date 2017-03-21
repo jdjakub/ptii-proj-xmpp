@@ -1,1 +1,1 @@
-true: package(unix), thread, package(angstrom), package(rresult), package(base64)
+true: package(unix), thread, package(angstrom), package(rresult), package(base64), package(bigstring)

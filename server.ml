@@ -80,27 +80,46 @@ let plain_auth_extract str =
     (nul *> take_till (fun _ -> false))
   in parse_only p (`String str)
 
-let expect buf read respond p =
+let expect buf_r fill respond p =
   let open A.Buffered in
+  let { buffer; off; len } = !buf_r in
   let rec run = function
     | Partial next ->
-        let len = read buf 0 2000 in
-        let inp = String.sub buf 0 len in
-        print_endline ("[IN]: " ^ inp ^ "[/IN]");
+      if len <> 0 then
+        let inp = Bigstring.sub buffer off len in
+        let () = buf_r := { buffer; off; len=0 } in
+        run (next (`Bigstring inp))
+      else
+        let len_read = fill buffer in
+        let inp = Bigstring.sub buffer 0 len_read in
         if len = 0 then Error "Didn't get anything"
-        else run (next (`String inp))
+        else
+          let () = print_endline ("[IN]: " ^ Bigstring.to_string inp ^ "[/IN]") in
+          run (next (`Bigstring inp))
     | Fail (unc,strs,str) ->
         Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
-    | Done (unc,result) ->
-        Ok result (* THROWS AWAY UNCONSUMED!!! *)
+    | Done (buf,result) ->
+      buf_r := buf;
+      Ok result (* THROWS AWAY UNCONSUMED!!! *)
   in run (parse p)
 
 let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
-    let buf = String.make 2000 '.' in
-    let expect p = expect buf (input from_ie) respond p in
+    let fill_buf buf =
+      let size = Bigstring.size buf in
+      let num_read = ref 0 in
+      (try
+        while !num_read < size do
+          Bigstring.set buf !num_read (input_char from_ie);
+          num_read := !num_read + 1
+        done
+      with End_of_file -> ());
+      !num_read
+    in
+    let buf = ref { A.Buffered.buffer = Bigstring.create 1000; off = 0; len = 0 } in
+    let expect p = expect buf fill_buf respond p in
     let stream_handshake id =
       expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
         Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
@@ -161,9 +180,9 @@ let sv_start () =
 
       Xmpp.Roster.get user >>= fun roster ->
       let items = Xmpp.Roster.R.bindings roster in
-      let items = List.map (fun (_,item) -> Xmpp.Roster.to_xml item) items in
+      let xitems = List.map (fun (_,item) -> Xmpp.Roster.to_xml item) items in
       respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", req_id ] [
-        xml Xmpp.jroster "query" [] items
+        xml Xmpp.jroster "query" [] xitems
       ]); expect P.tree >>| X.from_raw >>=
         Xml.Check.(tag "presence" *> orig) >>= function
       | Raw.Text _ -> Error "Presence: no children"
@@ -173,7 +192,7 @@ let sv_start () =
 
       (* Notify everyone that X is online *)
       let pres = Raw.(xml_n "presence" [ "from", raw_jid ] chs) in
-      List.iter (fun { jid; name; recv_ok; send_ok } ->
+      List.iter (fun (_,{ Xmpp.Roster.jid; name; recv_ok; send_ok }) ->
         if send_ok then Dispatch.dispatch raw_jid pres else () ) items;
 
       let work_queue = Dispatch.client_connected raw_jid in
