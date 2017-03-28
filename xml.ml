@@ -249,3 +249,31 @@ module Check = struct
       let error = format "Expected <%s ... %s=\"%s\" ...>, got %s=\"%s\"" t k v k v'  in
       Error error
 end
+
+let expect buf_r fill p =
+  let open Angstrom.Buffered in
+  let rec run = function
+    | Partial next ->
+      let { buffer; off; len } = !buf_r in
+      if len <> 0 then
+        let inp = Bigstring.sub buffer off len in
+        (*print_endline ("Parsing: \n" ^ Bigstring.to_string inp ^ "\n");*)
+        buf_r := { buffer; off; len=0 };
+        run (next (`Bigstring inp))
+      else
+        let len_read = fill buffer in
+        buf_r := { buffer; off=0; len=len_read };
+        (*print_endline ("Read: " ^ string_of_int len_read);*)
+        if len_read = 0 then Error "Didn't get anything"
+        else
+          let inp = Bigstring.sub buffer 0 len_read in
+          let () = print_endline ("[IN]: " ^ Bigstring.to_string inp ^ "[/IN]") in
+          run (next (`Bigstring inp))
+    | Fail (unc,strs,str) ->
+        Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
+    | Done (buf,result) ->
+        buf_r := buf;
+        let rest = Bigstring.sub buf.buffer buf.off buf.len in
+        (*print_endline (format "[%d+%d] unconsumed:\n%s\n" buf.off buf.len (Bigstring.to_string rest));*)
+        Ok result
+  in run (parse p)
