@@ -84,17 +84,7 @@ let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
-    let hackbuf = Bytes.create 512 in
-    let fill_buf buf =
-      (*print_endline "Filling";*)
-      (*let foo = "<?xml version='1.0'?><stream:stream></stream:stream><foo></foo>" in*)
-      (* Bytes.blit foo 0 hackbuf 0 (String.length foo); *)
-      let num_read = input from_ie hackbuf 0 (Bytes.length hackbuf) (* String.length foo*) in
-      Bigstring.blit_of_bytes hackbuf 0 buf 0 num_read;
-      num_read
-    in
-    let buf = ref { A.Buffered.buffer = Bigstring.create (Bytes.length hackbuf); off = 0; len = 0 } in
-    let expect p = Xml.expect buf fill_buf p in
+    let expect = Xml.buffered_expect from_ie in
     let stream_handshake id =
       expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
         Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->

@@ -250,8 +250,10 @@ module Check = struct
       Error error
 end
 
+module Ag = Angstrom
+
 let expect buf_r fill p =
-  let open Angstrom.Buffered in
+  let open Ag.Buffered in
   let rec run = function
     | Partial next ->
       let { buffer; off; len } = !buf_r in
@@ -273,7 +275,21 @@ let expect buf_r fill p =
         Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
     | Done (buf,result) ->
         buf_r := buf;
-        let rest = Bigstring.sub buf.buffer buf.off buf.len in
+        (*let rest = Bigstring.sub buf.buffer buf.off buf.len in*)
         (*print_endline (format "[%d+%d] unconsumed:\n%s\n" buf.off buf.len (Bigstring.to_string rest));*)
         Ok result
   in run (parse p)
+
+let buffered_expect in_ch =
+  let hackbuf = Bytes.create 512 in
+  let fill_buf buf =
+    (*print_endline "Filling";*)
+    (*let foo = "<?xml version='1.0'?><stream:stream></stream:stream><foo></foo>" in*)
+    (* Bytes.blit foo 0 hackbuf 0 (String.length foo); *)
+    let num_read = input in_ch hackbuf 0 (Bytes.length hackbuf) (* String.length foo*) in
+    Bigstring.blit_of_bytes hackbuf 0 buf 0 num_read;
+    num_read
+  in
+  let buf = ref { Ag.Buffered.buffer = Bigstring.create (Bytes.length hackbuf); off = 0; len = 0 } in
+  let expect p = expect buf fill_buf p in
+  expect

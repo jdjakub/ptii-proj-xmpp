@@ -13,8 +13,9 @@ object (self)
   val from_sv = in_c
   val to_sv = out_c
   val mutable stream_id = "0"
+  val expect_ = Xml.buffered_expect in_c
 
-  method expect p = Error "unimplemented"
+  method expect p = expect_ p
   method respond str = output_string to_sv str; flush to_sv
   method respond_tree tree = self#respond Raw.(to_string tree)
 
@@ -60,7 +61,7 @@ object (self)
 
     self#respond_tree Raw.(xml_n "iq" [ "type", "get"; "id", "iq-rost" ] [
       xml Xmpp.jroster "query" [] []
-    ]); Ok ()
+    ]);
 
     self#expect Xml.P.tree >>| Xml.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
     fun { req_id="iq-rost"; iq_type=(Result (Some xml)) } ->
@@ -71,7 +72,7 @@ object (self)
 
     self#respond_tree Raw.(xml_n "presence" [] []);
 
-    List.map Xmpp.Roster.item_of_xml items
+    Ok (List.map Xmpp.Roster.item_of_xml items)
 
   method message recpt body =
     self#respond_tree
@@ -83,7 +84,7 @@ object (self)
     self#message recpt Raw.(text body)
 
   method disconnect =
-    self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] [])
+    self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] []);
     self#respond "</stream:stream>"
 
 end
