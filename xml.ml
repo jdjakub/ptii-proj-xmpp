@@ -177,7 +177,7 @@ module Check = struct
   let tag t = function
     | Xml xml ->
       let t' = snd xml.tag in
-      if t' = t then Ok t else Error t'
+      if t' = t then Ok (Xml xml) else Error t'
     | Text _ -> Error ("Expected '" ^ t ^ "' element, got content instead")
 
   let attr k = function
@@ -244,7 +244,7 @@ module Check = struct
     else Error "Wrong tag prefix"
 
   let attv k v = attr k >>= fun v' (Xml xml) ->
-    if v = v' then Ok v else
+    if v = v' then Ok (Xml xml) else
       let t = snd xml.tag in
       let error = format "Expected <%s ... %s=\"%s\" ...>, got %s=\"%s\"" t k v k v'  in
       Error error

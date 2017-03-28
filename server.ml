@@ -82,43 +82,46 @@ let plain_auth_extract str =
 
 let expect buf_r fill respond p =
   let open A.Buffered in
-  let { buffer; off; len } = !buf_r in
   let rec run = function
     | Partial next ->
+      let { buffer; off; len } = !buf_r in
       if len <> 0 then
         let inp = Bigstring.sub buffer off len in
-        let () = buf_r := { buffer; off; len=0 } in
+        (*print_endline ("Parsing: \n" ^ Bigstring.to_string inp ^ "\n");*)
+        buf_r := { buffer; off; len=0 };
         run (next (`Bigstring inp))
       else
         let len_read = fill buffer in
-        let inp = Bigstring.sub buffer 0 len_read in
-        if len = 0 then Error "Didn't get anything"
+        buf_r := { buffer; off=0; len=len_read };
+        (*print_endline ("Read: " ^ string_of_int len_read);*)
+        if len_read = 0 then Error "Didn't get anything"
         else
+          let inp = Bigstring.sub buffer 0 len_read in
           let () = print_endline ("[IN]: " ^ Bigstring.to_string inp ^ "[/IN]") in
           run (next (`Bigstring inp))
     | Fail (unc,strs,str) ->
         Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))
     | Done (buf,result) ->
-      buf_r := buf;
-      Ok result (* THROWS AWAY UNCONSUMED!!! *)
+        buf_r := buf;
+        let rest = Bigstring.sub buf.buffer buf.off buf.len in
+        (*print_endline (format "[%d+%d] unconsumed:\n%s\n" buf.off buf.len (Bigstring.to_string rest));*)
+        Ok result
   in run (parse p)
 
 let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
+    let hackbuf = Bytes.create 512 in
     let fill_buf buf =
-      let size = Bigstring.size buf in
-      let num_read = ref 0 in
-      (try
-        while !num_read < size do
-          Bigstring.set buf !num_read (input_char from_ie);
-          num_read := !num_read + 1
-        done
-      with End_of_file -> ());
-      !num_read
+      (*print_endline "Filling";*)
+      (*let foo = "<?xml version='1.0'?><stream:stream></stream:stream><foo></foo>" in*)
+      (* Bytes.blit foo 0 hackbuf 0 (String.length foo); *)
+      let num_read = input from_ie hackbuf 0 (Bytes.length hackbuf) (* String.length foo*) in
+      Bigstring.blit_of_bytes hackbuf 0 buf 0 num_read;
+      num_read
     in
-    let buf = ref { A.Buffered.buffer = Bigstring.create 1000; off = 0; len = 0 } in
+    let buf = ref { A.Buffered.buffer = Bigstring.create (Bytes.length hackbuf); off = 0; len = 0 } in
     let expect p = expect buf fill_buf respond p in
     let stream_handshake id =
       expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
@@ -188,12 +191,15 @@ let sv_start () =
       | Raw.Text _ -> Error "Presence: no children"
       | Raw.Branch (_,chs) ->
 
+      let notify_subs stanza =
+        List.iter (fun (_,{ Xmpp.Roster.jid; name; recv_ok; send_ok }) ->
+          if send_ok then Dispatch.dispatch jid stanza else () ) items;
+      in
+
       respond_tree Raw.(xml_n "presence" [ "from", raw_jid; "to", jid ] chs);
 
-      (* Notify everyone that X is online *)
-      let pres = Raw.(xml_n "presence" [ "from", raw_jid ] chs) in
-      List.iter (fun (_,{ Xmpp.Roster.jid; name; recv_ok; send_ok }) ->
-        if send_ok then Dispatch.dispatch raw_jid pres else () ) items;
+      (* Notify all subscribers that X is online *)
+      notify_subs Raw.(xml_n "presence" [ "from", raw_jid ] chs);
 
       let work_queue = Dispatch.client_connected raw_jid in
       let stream_lock = Mutex.create () in
@@ -214,8 +220,13 @@ let sv_start () =
           xml Xmpp.stanzas "feature-not-implemented" [] []
         ]))
       in
-      let handle_presence = function
-        | _ -> Error "Presence not yet impl'd"
+      let handle_presence = Xml.Check.(
+        (attv "type" "unavailable" >>= fun _ ->
+          (* Notify all subscribers that X is offline *)
+          orig >>= fun pres -> notify_subs pres; pure true
+        )
+        <|> pure false
+      )
       in
       let handle_message =
         Xml.Check.(attr "to" >>= fun recipient ->
@@ -240,7 +251,9 @@ let sv_start () =
               in self_dispatch respns)
           ) <|>
           ((raw |> Xml.Check.tag "presence") >>= fun pres ->
-            handle_presence pres >>| self_dispatch
+            handle_presence pres >>| fun quit ->
+              finished := quit;
+              Ok ()
           ) <|>
           ((raw |> Xml.Check.tag "message") >>= fun to_addr ->
             handle_message raw >>| fun (recip,xml) ->
