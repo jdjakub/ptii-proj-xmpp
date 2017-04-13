@@ -20,11 +20,10 @@ object (self)
   method respond_tree tree = self#respond Raw.(to_string tree)
 
   method establish_streams =
-    self#respond "<?xml version='1.0'?>";
-    self#respond Raw.(to_string_open (xml_d Xmpp.jstream "stream" [
+    self#respond ("<?xml version='1.0'?>" ^ Raw.(to_string_open (xml_d Xmpp.jstream "stream" [
       "xmlns", snd Xmpp.jclient;
       "version", "1.0"; "to", svname;
-    ] []));
+    ] [])) );
     self#expect Xml.P.tag_open >>| Xml.from_raw >>=
       Xml.Check.(qtag Xmpp.jstream "stream" *> attr "id") >>= fun id ->
         stream_id <- id; Ok ()
@@ -89,11 +88,11 @@ object (self)
 
 end
 
-let () =
+(*let () =
 let sock = socket PF_INET SOCK_STREAM 0 in
 let addr = inet_addr_of_string "127.0.0.1" in
   connect sock (ADDR_INET (addr, 12345));
   let str = String.make 20 '.' in
   let len = read sock str 0 20 in
   let str = String.sub str 0 len in
-    Printf.printf "SV: %s\n" str;
+    Printf.printf "SV: %s\n" str;*)

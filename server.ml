@@ -187,7 +187,9 @@ let sv_start () =
           (* Notify all subscribers that X is offline *)
           orig >>= fun pres -> notify_subs pres; pure true
         )
-        <|> pure false
+        <|> Xml.Check.(attr "from" >>= fun jid ->
+          Dispatch.print ("[PRS] " ^ raw_jid ^ " sees that " ^ jid ^ " is online");
+          pure false)
       )
       in
       let handle_message =

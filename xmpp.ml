@@ -118,8 +118,4 @@ module Stanza = struct
         | _ -> fail "bad-request") >>| fun iq_type -> { req_id; iq_type }
 
   end
-
-  module Presence = struct
-
-  end
 end

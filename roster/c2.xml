@@ -1,0 +1,6 @@
+<roster>
+  <item jid="c1@ptii.proj" name="Client 1" subscription="both" />
+  <item jid="c2@ptii.proj" name="Client 2" subscription="both" />
+  <item jid="c3@ptii.proj" name="Client 3" subscription="both" />
+  <item jid="c4@ptii.proj" name="Client 4" subscription="both" />
+</roster>
