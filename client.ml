@@ -86,6 +86,9 @@ object (self)
     self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] []);
     self#respond "</stream:stream>"
 
+  method spill =
+    self#expect Xml.P.tree >>| Xml.from_raw
+
 end
 
 (*let () =

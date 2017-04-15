@@ -72,7 +72,7 @@ module Roster = struct
           Ok result (* THROWS AWAY UNCONSUMED!!! *)
     in Rr.R.(
     iter (parse Angstrom.(Xml.P.tree >>| Xml.from_raw)) >>= Xml.Check.children >>=
-      let process rstr_res tree = rstr_res >>= fun (i,rstr) -> print_endline (string_of_int i); item_of_xml tree
+      let process rstr_res tree = rstr_res >>= fun (i,rstr) -> (*print_endline (string_of_int i);*) item_of_xml tree
         >>= fun item -> Ok (i+1, R.add item.jid item rstr)
       in
       List.fold_left process (Ok (1,R.empty)) )

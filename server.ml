@@ -20,9 +20,10 @@ module Dispatch = struct
     let q_mon = Mutex.create () in
     let avail = Condition.create () in
     let fin = ref false in
-    Mutex.lock q_mon;
+    Mutex.lock qs_lock;
       queues := M.add name (q,q_mon,avail,fin) !queues;
-    Mutex.unlock q_mon; print (fmt "Client connected: %s" name);
+    Mutex.unlock qs_lock; print (fmt "Client connected: %s" name);
+    List.iter (fun (k,_) -> print k) (M.bindings !queues);
     (q,q_mon,avail,fin)
 
   let client_disconnected name =
@@ -57,7 +58,7 @@ module Dispatch = struct
         Condition.signal avail;
       Mutex.unlock q_mon;
       (*print (fmt "%s: %d" name work)*)
-    with Not_found -> () (*print (fmt "Dropped %s: %d" name work )*) (* Drop the packet *)
+    with Not_found -> print (fmt "Dropped work for %s" name) (* Drop the packet *)
 
 end
 
@@ -185,10 +186,10 @@ let sv_start () =
       let handle_presence = Xml.Check.(
         (attv "type" "unavailable" >>= fun _ ->
           (* Notify all subscribers that X is offline *)
-          orig >>= fun pres -> notify_subs pres; pure true
+          (* orig >>= fun pres -> notify_subs pres;*) pure true (* inf loop? *)
         )
         <|> Xml.Check.(attr "from" >>= fun jid ->
-          Dispatch.print ("[PRS] " ^ raw_jid ^ " sees that " ^ jid ^ " is online");
+          Dispatch.print ("[PRS] " ^ user ^ " sees that " ^ jid ^ " is online");
           pure false)
       )
       in

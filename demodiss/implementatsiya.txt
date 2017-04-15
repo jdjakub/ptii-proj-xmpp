@@ -1,0 +1,78 @@
+Implementation
+
+---< PINK BOOK >---
+This chapter should describe what was actually produced: programs written, hardware built, theory developed.
+
+Any design strategies that looked ahead to the testing stage might profitably be referred to (that goddamn "professional approach" again).
+
+Descriptions of programs may include fragments of high-level code. But large chunks of code are usually best left to appendices or omitted altogether. Analogous advice applies to circuit diagrams. Not that I have any of those.
+
+Draw attention to the parts of the work which are not your own (true: unix, thread, angstrom, rresult, base64, bigstring). Making effective use of powerful tools and pre-existing code is often laudable, and will count to your credit if properly reported.
+
+It should not be necessary to give a day-by-day account of the progress of the work, but - major milestones may sometimes be highlighted with advantage...
+
+Implementation is worth 40% of the marks. My implementation is pretty good, considering. However, it doesn't make effective use of the module system or interfaces; it architects per-client logic differently between client and server; the XML tree vs text distinction ought to have been made in the type system, currently it sticks out like the unnecessary cruft it is; buffering has been a nightmare and is likely sub-par. Still: parsing and flow handled well, much advantageous use of combinators and monads.
+---</ PINK BOOK >---
+
+I've implemented: server, client for testing!!. Both depend on Xmpp and Xml modules.
+As the objective of this project was to build a server, I developed a server program (server.ml). I used the Psi client software to help develop the server, but for later testing a more automatable client was needed. For this reason, I also developed a basic XMPP client controller (client.ml).
+
+xml.ml:
+XML is represented in three ways: as text, as low-level 'Raw' XML, and as high-level xml_node. The Xml module provides utilities work working with these representations.
+
+XML as text is suitable only for human comprehension; computationally, being a long unstructured block of bytes, it is unsuitable for computer processing. XMPP, though, is built around sending and receiving XML via text, so the server needs to analyse incoming XML and output XML text to clients. The Xml.P module contains Angstrom parsers for XML syntax, producing the `literal' abstract representation defined in Xml.P.Raw. Functions for converting this back into text, for output purposes, also live in Xml.P.Raw.
+
+The main Angstrom parser is P.tree, which converts nested open/close tags and embedded text into a Raw.Branch node, or Raw.Text if the whole thing consists of just text. This suffices for most of XMPP, but there are some situations that do not involve fully completed trees. For example, setting up the client-server XML stream involves only the opening tag of the stream element; likewise, terminating the stream requires the closing tag. Thus, tag_open and tag_close are provided. In addition, before opening the stream, an XML declaration <?xml version="1.0"?> is needed, which uses slightly different syntax to XML tags. Since this syntax does not appear anywhere else, there is a custom xml_decl parser for this purpose.
+
+These parsers are all implemented in terms of smaller named parsers, combined using the Angstrom parser combinators. For example, tag_open is implemented this way:
+
+let tag_open =
+  tok_langle *> qual_name >>= fun (ns,id) ->
+    lift2 (fun attrs _ -> Raw.Branch ((ns,id,attrs),[]))
+      (many attr_val)
+      tok_rangle
+
+This is read as: "Accept the token <, then a qualified name, then zero or more attribute-value pairs, then the token >; combine the qualified name and the attributes into a Branch node with no children". Elaborating on the constituent parsers: tok_langle = lex (char '<'); tok_colon = lex (char ':'), and so on, where lex skips whitespace.
+
+As mentioned, the Raw module contains the `literal' abstract XML representation that these parsers target. Consider
+
+<foo:error type="fatal" xmlns:foo="bar">
+  <a></a>
+  <b></b>
+  Sample text
+</foo:error>
+
+The parent node has a qualified tag foo:error, along with a list of attributes. Each attribute conceptually consists of a prefix, name and value. The prefix might be empty, such as the case of type="fatal". The abstract representation makes all these explicit, representing attributes as pairs of qualified names and values. type="fatal" and xmlns:foo="bar" become the list [ (("", "type"), "fatal"); (("xmlns", "foo"), "bar") ].
+
+Note the `literal' interpretation of the attribute list as an actual OCaml list. Technically, the order of XML attributes does not matter, but it is simpler to use a list at this level. Also, the attribute system in XML is (ab)used for the purpose of defining namespaces: an `attribute' like (("xmlns", "foo"), "bar") is not really an attribute at all, but specifies that the foo prefix represents the namespace bar. In addition, any (("", "xmlns"), "bar") attribute represents the default namespace. These special considerations are not handled in this representation, and it sees them just as normal attributes.
+
+The higher-level representation, discussed later, exists for situations where this representation becomes unwieldy.
+
+Output functions designed for convenience of notation; get around compulsory parentheses for data ctors by using functions; provide common defaults via different functions; namespace automagic. Large input/output asymmetry; output to Raw is fine and natural. Input to Raw: very cumbersome to pattern match, etc. Lists of attrs: quick-and-dirty implementation of key[attr]-value map. Superfluous order, linear scan to retrieve attribute value, full scan to determine absence of attribute. Namespace short/long/default forms not handled, nor inherited / nested namespaces; qname cruft needed approximately 1% of the time. So: enter xml_node; Text augmented with lang... and attr is a function (using Map struct), namespace is a function, etc. Converting Raw to xml_node handles nesting of namespaces.
+
+xml_node enables higher-level combinators (the Check module):
+tag "message" succeeds if the node has the "message" tag (irrespective of namespace considerations)
+qtag functions like tag, but takes a namespace prefix to also check
+attr "id" results in the value of the id attribute if it exists
+attv "id" "1234" succeeds if the id attribute exists and is equal to 1234
+attr_opt is like attr but does not fail, instead resulting in Some value or None
+child gives the first child of the node if it exists
+children gives a list of the node's children (possibly the empty list, so this one also never fails)
+orig results in the low-level Raw representation from which the xml_node was obtained
+text gives the text string of a Text node
+
+xml.ml also contains the hack-y expect and buffered_expect.
+
+xmpp.ml:
+namespace defs
+Roster module
+underpopulated Stanza module (containing Iq only)
+
+server.ml:
+Dispatch machinery
+sv_start driver
+per_client; XMPP handshake
+
+client.ml:
+object rationale
+symmetric duplication of server.ml :/
