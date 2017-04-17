@@ -199,7 +199,13 @@ The combinators let me write XML matching code resembling, as closely as possibl
 
 tag "iq" *> attv "type" "get" *> attr "id" >>= fun id -> (* id is now bound to the "id" attribute *)
 
-I implemented the usual *> for `sequence', >>= for `bind', <|> for `alternative' and the direction-reversed versions where needed.
+I implemented the usual >>= for `bind', *> for `sequence', <|> for `alternative' and the direction-reversed versions where needed.
+
+(f >>= fun x -> g) xml first performs f xml; if successful, it binds the result value to x and returns g xml. Otherwise, if f xml fails, it aborts with the error value.
+
+(f *> g) xml is like >>= but discards the result, binding no values. In this sense, it sequences a `check' with a check or match, although this is a conceptual distinction that is not enforced in the code.
+
+(f <|> g) xml is like *>, but with opposite error behaviour: when f xml fails, g xml is tried.
 
 The implementations are all fairly straightforward and similar to each other. For instance, attr:
 
