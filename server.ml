@@ -22,8 +22,8 @@ module Dispatch = struct
     let fin = ref false in
     Mutex.lock qs_lock;
       queues := M.add name (q,q_mon,avail,fin) !queues;
+      let l = M.bindings !queues in
     Mutex.unlock qs_lock;
-    let l = M.bindings !queues in
     print (fmt "Client connected: %s; %d connected clients:" name (List.length l));
     List.iter (fun (k,_) -> print k) l;
     (q,q_mon,avail,fin)

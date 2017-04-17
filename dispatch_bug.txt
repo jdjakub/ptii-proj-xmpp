@@ -1,0 +1,45 @@
+I started the test server and opened the utop toplevel.
+
+I used the following utility to open a connection, returning its output channel:
+
+let conn () = snd (Unix.(open_connection (ADDR_INET(inet_addr_loopback, 5222))))
+
+I opened three connections:
+
+let c1 = conn()
+let c2 = conn()
+let c3 = conn()
+
+The server printed
+
+Some client connected
+Some client connected
+Some client connected
+
+I then gave the clients names in the order 1,2,3:
+
+output_string c1 "Client #1\n";
+output_string c2 "Client #2\n";
+output_string c3 "Client #3\n";
+
+Nothing was printed on the server. I then fed each of the clients new lines in the order 3,2,1, thus causing the server to remove their names:
+
+output_string c3 "ggggg\n";
+output_string c2 "ggggg\n";;
+output_string c1 "ggggg\n";;
+
+Still nothing was printed on the server. Finally, I closed the sockets in the same order:
+
+Unix.(close_out c3; close_out c2; close_out c1);;
+
+Now, all the output appeared on the server, but in an unexpected order:
+
+Client connected: Client #2; 1 connected clients:
+Client #2
+Client disconnected: Client #2
+Client connected: Client #3; 1 connected clients:
+Client #3
+Client disconnected: Client #3
+Client connected: Client #1; 1 connected clients:
+Client #1
+Client disconnected: Client #1
