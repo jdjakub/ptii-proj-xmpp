@@ -64,6 +64,39 @@ module Dispatch = struct
 
 end
 
+module Driver = struct
+  (* Code in this module is copied and adapted from
+  https://github.com/lucasaiu/ocaml/blob/master/otherlibs/unix/unix.ml *)
+
+  open Unix
+
+  (* Copied from above *)
+  let rec accept_non_intr s =
+    try accept s
+    with Unix_error (EINTR, _, _) -> accept_non_intr s
+
+  (* Copied and adapted to spawn threads instead of processes *)
+  let establish_server server_fun sockaddr =
+    let sock =
+      socket (domain_of_sockaddr sockaddr) SOCK_STREAM 0 in
+    setsockopt sock SO_REUSEADDR true;
+    bind sock sockaddr;
+    listen sock 5;
+    while true do
+      let (s, caller) = accept_non_intr sock in
+      let inchan = in_channel_of_descr s in
+      let outchan = out_channel_of_descr s in
+      let server_fun_with_cleanup (inc,outc) =
+        print_endline "Somebody connected!";
+        let result = server_fun inc outc in
+        close s; match result with
+        | Ok _ -> ()
+        | Error err -> failwith err
+      in
+      Thread.create server_fun_with_cleanup (inchan,outchan);
+    done
+end
+
 open Rresult
 
 let (<|>) ex ey = match ex with
@@ -235,10 +268,10 @@ let sv_start () =
       Thread.join worker;
       !res
     ) |> function
-    | Ok _ -> print_endline "[SUCCESS]"; (* respond "</stream:stream>" *)
-    | Error err -> respond "</stream:stream>"; failwith err;
+    | Ok _ -> print_endline "[SUCCESS]"; Ok () (* respond "</stream:stream>" *)
+    | Error err -> respond "</stream:stream>"; Error err
 
   in
-  Unix.(establish_server per_client (ADDR_INET (inet_addr_loopback,5222)))
+  Driver.(establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)))
 
 let () = sv_start ()

@@ -218,7 +218,7 @@ module Check = struct
   let ( >*> ) f g xml =
     Rresult.R.map (g xml) (f xml)
 
-  (* f xml >>= g xml ? requires g = fun xml v -> ... xml *)
+  (* f xml >>= g xml ? requires g = fun v xml -> ... xml *)
   let ( >>= ) f g xml = match f xml with
     | Ok v -> g v xml
     | Error e -> Error e
