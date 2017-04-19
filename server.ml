@@ -191,7 +191,7 @@ let sv_start () =
 
       let notify_subs stanza =
         List.iter (fun (_,{ Xmpp.Roster.jid; name; recv_ok; send_ok }) ->
-          if send_ok then Dispatch.dispatch jid stanza else () ) items;
+          if send_ok && jid <> raw_jid then Dispatch.dispatch jid stanza else () ) items;
       in
 
       respond_tree Raw.(xml_n "presence" [ "from", raw_jid; "to", jid ] chs);
@@ -219,13 +219,15 @@ let sv_start () =
         ]))
       in
       let handle_presence = Xml.Check.(
-        (attv "type" "unavailable" >>= fun _ ->
-          (* Notify all subscribers that X is offline *)
-          (* orig >>= fun pres -> notify_subs pres;*) pure true (* inf loop? *)
+        (attv "type" "unavailable" *> (attr "from" *> pure false <|>
+            (* Notify all subscribers that X is offline *)
+            (orig >>= fun pres ->
+              notify_subs (Raw.with_attrs [ "from", raw_jid ] pres);
+              pure true)
+            (* no "from" attr means it is legit and
+            should be fwd'd with "from" attr *)
+          )
         )
-        <|> Xml.Check.(attr "from" >>= fun jid ->
-          Dispatch.print ("[PRS] " ^ user ^ " sees that " ^ jid ^ " is online");
-          pure false)
       )
       in
       let handle_message =
@@ -264,7 +266,7 @@ let sv_start () =
           | Ok _ -> ()
           | Error str -> res := Error str; finished := true
       done;
-      Dispatch.client_disconnected user; (* remove dispatch access as soon as possible *)
+      Dispatch.client_disconnected raw_jid; (* remove dispatch access as soon as possible *)
       Thread.join worker;
       !res
     ) |> function

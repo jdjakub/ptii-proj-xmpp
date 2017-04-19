@@ -79,6 +79,13 @@ module P = struct
         | (pre,full) -> (("xmlns",pre),full)  :: attrs'
       ), children)
 
+    let with_attrs attrs =
+      let attrs' = List.map attr attrs in
+      function
+        | Branch ((pre,tag,attrs), children) ->
+            Branch ((pre,tag,attrs @ attrs'), children)
+        | Text _ -> failwith "with_attrs called on text node"
+
     let string_of_qn = function
       | ("",name) -> name
       | (ns,name) -> ns ^ ":" ^ name
