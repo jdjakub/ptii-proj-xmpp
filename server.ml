@@ -19,8 +19,10 @@ module Dispatch = struct
     Mutex.lock qs_lock;
       let names = List.map fst (M.bindings !queues) in
     Mutex.unlock qs_lock;
-    print_endline "All online:";
-    List.iter print_endline names;
+    Mutex.lock prn_lock;
+      print_endline "All online:";
+      List.iter print_endline names;
+    Mutex.lock prn_lock;
     names
 
   let client_connected name =
@@ -32,15 +34,17 @@ module Dispatch = struct
       queues := M.add name (q,q_mon,avail,fin) !queues;
       let l = M.bindings !queues in
     Mutex.unlock qs_lock;
-    print (fmt "Client connected: %s; %d connected clients:" name (List.length l));
-    List.iter (fun (k,_) -> print k) l;
+    Mutex.lock prn_lock;
+      print (fmt "Client connected: %s; %d connected clients:" name (List.length l));
+      List.iter (fun (k,_) -> print k) l;
+    Mutex.unlock prn_lock;
     (q,q_mon,avail,fin)
 
   let client_disconnected name =
-    try
+    ( try
       let (_,_,avail,fin) = M.find name !queues in
       fin := true; Condition.signal avail
-    with Not_found -> ();
+    with Not_found -> () );
     Mutex.lock qs_lock;
       queues := M.remove name !queues;
     Mutex.unlock qs_lock; print (fmt "Client disconnected: %s" name)
