@@ -24,7 +24,7 @@ First, a note on terminology. XML is a notation for hierarchical trees, and an X
 
 [footnote: Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'. This case is obviously handled, but does not have any terminological considerations. ]
 
-Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' xmlns:foo="bar" is treated specially as saying that the prefix foo represents the namespace bar. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by xmlns="bar". These associations are local to the node and are inherited by its children. There may be other uses of the xmlns: prefix, but I considered namespace definition as the only aspect relevant to this project.
+Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' xmlns:foo="bar" is treated specially as saying that the prefix foo represents the namespace bar. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by xmlns="bar". These associations are local to the node in the tree and are inherited by its children. There may be other uses of the xmlns: prefix, but I considered namespace definition as the only aspect relevant to this project.
 
 Both explicit and default prefixes are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the body element of HTML could be written <html:body> (as long as the html prefix referred to the HTML namespace), <body> (provided HTML was the default namespace), or even <quux:body> (if quux referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial <stream> element needs to use the stream: prefix, for unknown reasons. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
 
@@ -174,7 +174,7 @@ An xml_node is normally constructed from an original Raw.xml structure, and it i
 [ HOW DO YOU CONVERT RAW TO XML_NODE, JOEL?? ]
 
 Semantic checking and matching
-The text-to-Raw parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of `pattern matching' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep], so I went down the route of parsers and combinators modelled after Angstrom.
+The text-to-Raw parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of ``pattern matching'' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep], so I went down the route of parsers and combinators modelled after Angstrom.
 
 Unlike Angstrom's parsers, which are designed to be fairly orthogonal fundamental building blocks of more complex parsers, mine are deliberately special-purpose. I went with whatever would be useful to write readable code, without necessarily being exhaustive in the range of behaviours achievable by combining them.
 
@@ -198,6 +198,8 @@ Matcher combinators
 The combinators let me write XML matching code resembling, as closely as possible in OCaml[footnote: short of syntax extensions perhaps, which I am unfamiliar with], the XML itself:
 
 tag "iq" *> attv "type" "get" *> attr "id" >>= fun id -> (* id is now bound to the "id" attribute *)
+
+This would succeed on the XML node <foo:iq type="get" id="123"> ... </foo:iq>.
 
 I implemented the usual >>= for `bind', *> for `sequence', <|> for `alternative' and the direction-reversed versions where needed.
 
@@ -242,9 +244,11 @@ Dispatch machinery
 sv_start driver
 per_client; XMPP handshake
 
-The server program uses a simple `driver' to spawn off a thread each time a client connects. The function sv_start () simply performs Unix.establish_server on the local loopback address, passing in the function per_client.
+The server program uses a simple `driver' to spawn off a thread each time a client connects. The function sv_start () simply performs Driver.establish_server on the local loopback address, passing in the function per_client.
 
-When Unix.establish_server accepts a client connection, it opens a read and a write channel and passes them to per_client. The XMPP protocol then follows in two broad stages, setup and service. Setup involves handshaking with the client, performing authentication and resource binding, and the initial presence. Service consists of responding to client requests and delivering messages to the client.
+Driver.establish_server is an adapted version of Unix.establish_server from the standard library. The Unix version spawns off a separate process to handle each client connection, which was revealed as deeply problematic during testing. I took the implementation of Unix.establish_server and rewrote the process-spawning code with thread-spawning code.
+
+When Driver.establish_server accepts a client connection, it opens a read and a write channel and passes them to per_client, invoked on a new thread. The XMPP protocol then follows in two broad stages, setup and service. Setup involves handshaking with the client, performing authentication and resource binding, and the initial presence. Service consists of responding to client requests and delivering messages to the client.
 
 All of these stages make use of the Result monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
 

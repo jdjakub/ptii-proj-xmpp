@@ -53,8 +53,12 @@ module Roster = struct
 
   let rosters = ref M.empty
 
-  let get name = try Ok (M.find name !rosters)
-    with Not_found -> Error ("No such roster loaded: " ^ name)
+  let get name = try Some (M.find name !rosters)
+    with Not_found -> None
+
+  let get_subs_of name =
+    try Some (List.filter (fun (_,item) -> item.send_ok) (R.bindings (M.find name !rosters)))
+    with Not_found -> None
 
   let roster_from_in_ch in_ch =
     let open Angstrom.Buffered in
@@ -80,9 +84,9 @@ module Roster = struct
   let load_from_storage name =
     try M.find name !rosters; Ok ()
     with Not_found ->
-      rosters := M.add name R.empty !rosters;
       try
         let in_ch = open_in ("roster/" ^ name ^ ".xml") in
+        rosters := M.add name R.empty !rosters;
         Rr.( roster_from_in_ch in_ch >>| fun (_,r) ->
          close_in in_ch;
          rosters := M.add name r !rosters )

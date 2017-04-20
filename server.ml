@@ -15,6 +15,14 @@ module Dispatch = struct
       print_endline str;
     Mutex.unlock prn_lock
 
+  let all_online () =
+    Mutex.lock qs_lock;
+      let names = List.map fst (M.bindings !queues) in
+    Mutex.unlock qs_lock;
+    print_endline "All online:";
+    List.iter print_endline names;
+    names
+
   let client_connected name =
     let q = Queue.create () in
     let q_mon = Mutex.create () in
@@ -147,7 +155,7 @@ let sv_start () =
       print_endline ("PASSWORD: " ^ pass);
       respond_tree Raw.(xml Xmpp.sasl "success" [] []);
 
-      Xmpp.Roster.load_from_storage user >>= fun _ ->
+      Xmpp.Roster.load_from_storage user; (* ignore not found *)
 
       stream_handshake "different-id" >>= fun (my_addr,id) ->
       respond_tree Raw.(xml Xmpp.jstream "features" [] [
@@ -179,24 +187,32 @@ let sv_start () =
       fun { req_id; iq_type=(Get query) } ->
         (query |> Xml.Check.qtag Xmpp.jroster "query") >>= fun _ ->
 
-      Xmpp.Roster.get user >>= fun roster ->
-      let items = Xmpp.Roster.R.bindings roster in
+      let items_opt = Xmpp.Roster.get user in
+      let items = match items_opt with
+        | Some roster -> Xmpp.Roster.R.bindings roster
+        | None        -> []
+      in
       let xitems = List.map (fun (_,item) -> Xmpp.Roster.to_xml item) items in
       respond_tree Raw.(xml_n "iq" [ "type", "result"; "id", req_id ] [
         xml Xmpp.jroster "query" [] xitems
-      ]); expect P.tree >>| X.from_raw >>=
+      ]);
+
+      expect P.tree >>| X.from_raw >>=
         Xml.Check.(tag "presence" *> orig) >>= function
-      | Raw.Text _ -> Error "Presence: no children"
-      | Raw.Branch (_,chs) ->
+          | Raw.Text _ -> Error "Presence: no children"
+          | Raw.Branch (_,chs) ->
 
       let notify_subs stanza =
-        List.iter (fun (_,{ Xmpp.Roster.jid; name; recv_ok; send_ok }) ->
-          if send_ok && jid <> raw_jid then Dispatch.dispatch jid stanza else () ) items;
+        let subs = match Xmpp.Roster.get_subs_of user with
+          | None -> Dispatch.all_online () (* By default, everyone's a subscriber! *)
+          | Some items -> List.map (fun (_,item) -> item.Xmpp.Roster.jid) items
+        in
+        List.iter (fun jid -> if jid <> raw_jid then Dispatch.dispatch jid stanza else () ) subs;
       in
 
       respond_tree Raw.(xml_n "presence" [ "from", raw_jid; "to", jid ] chs);
 
-      (* Notify all subscribers that X is online *)
+      (* Notify all subscribers that the client is online *)
       notify_subs Raw.(xml_n "presence" [ "from", raw_jid ] chs);
 
       let work_queue = Dispatch.client_connected raw_jid in
