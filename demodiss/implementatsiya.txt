@@ -234,9 +234,50 @@ text gives the text string of a Text node
 
 xml.ml also contains the hack-y expect and buffered_expect.
 
-xmpp.ml:
-namespace defs
-Roster module
+The Xmpp module (xmpp.ml)
+This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in [xml], the prefix-namespace pairs used often in XMPP are defined here.
+
+The Roster
+`Roster' is simply XMPP jargon for what is functionally a contact list. [rationale should go in preparation?]
+
+Each user <username> has a roster file located in the roster/ directory called <username>.xml. It consists of a list of XMPP roster <item> elements. Each item describes another user, and the subscription status between the two users.
+
+The concept of subscription has design ramifications worth discussing. The word is used in its usual sense: if user A is subscribed to user B, then A will receive updates about B's presence on the network. This is a directed relation; B might not be subscribed to A. Thus, conceptually, subscription is a directed graph that needs to be stored on disk as well as in memory. There is, then, a choice of how to represent this graph.
+
+The two main options for graph representation are adjacency list and adjacency matrix.
+
+An adjacency matrix, being a 2D structure, would have forced me to think about implementation in terms of nested 1D maps or arrays, and how to avoid loading the entire graph at once; thus also how to split it into separate files or regions of a file, and so on.
+
+So, overall, I leaned towards the adjacency list. I felt it would be easier to implement given that it already matched up to the way XMPP treats the subscription relation. I could have a separate file for each `vertex' of this graph, in a format resembling a list of <item>s, and similar separate in-memory data structures, making loading and lookup simple to think about.
+
+[time constraints too?]
+
+The subscribers of user A are recorded in the XMPP <item> elements as from, to, or both. RFC 6121 defines to as A having a subscription to the user in the <item> element; from is the converse, and both simply means A and B are mutually subscribed.
+
+Now, if A's roster (on disk or in memory) says it is subscribed to B, then B's roster should say it is subscribed from A. The analogous case applies to from/to. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
+
+[ so why don't I bother with it ]
+
+There is conceptually a mapping from user to their roster. I found it useful to view a user's roster as another mapping, from a contact's JID to their <item> record. The user-roster association is a global Map data structure, and the roster itself is another Map.
+
+I represented <item> records, in-memory, as follows:
+
+type item = {
+  jid     : string;      (* Contact's Jabber ID                       *)
+  name    : string;      (* Human-friendly name of contact            *)
+  recv_ok : bool;        (* OK to receive presence from this contact? *)
+  send_ok : bool;        (* OK to send presence to this contact?      *)
+  groups  : string list; (* Membership of contact in groups           *)
+}
+
+This is almost a direct XML-to-OCaml translation of XMPP's <item> element, the main difference being my treatment of the subscription attribute. I felt that the subscription attribute as from, to or both was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: recv_ok (activated by to and both) and send_ok (activated by from and both). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send via send_ok rather than mentally decrypting `to', `from', or `both'. [what happened to groups??]
+
+Rosters are managed through the Roster sub-module. After authenticating a client, the server calls Roster.load_from_storage with their username, to ensure that their contact information is available.
+
+
+
+[roster_from_in_ch, item structure and item_of_xml/to_xml, abandonment of CRUD, view towards testing]
+
 underpopulated Stanza module (containing Iq only)
 
 server.ml:
