@@ -18,7 +18,7 @@ As the objective of this project was to build a server, I developed a server pro
 These both make heavy use of the Xml and Xmpp modules.
 
 The Xml module (xml.ml):
-XML is central to XMPP. In my code, it comes in three main forms: as text, as low-level 'Raw' XML, and as high-level xml_node. The Xml module provides utilities for working with these representations.
+XML is central to XMPP. In my code, it comes in three main forms: as text, as low-level `Raw' XML, and as high-level xml_node. The Xml module provides utilities for working with these representations.
 
 First, a note on terminology. XML is a notation for hierarchical trees, and an XML node has the form <prefix:tag pre1:attr1="value1" pre2:attr2="value2" ... pren:attrn="valuen"> ... children ... </prefix:tag>. attri are the node's attributes. Most of the time, prefixes are absent from attributes, but they are used in a couple of important cases outlined below. I call the combination of prefix and identifier a qualified name. This way, a node can be seen as <qname qname1="value1" qname2="value2" ... qnamen="valuen"> ... </qname>.
 
@@ -169,9 +169,11 @@ One consideration with namespaces is that prefix-namespace mappings are inherite
 
 attr, attr_full and namespace all internally use the standard library's Map structure, being more appropriate for lookup than lists; lists require a linear scan to locate a mapping, and a full scan of the list to determine its absence, whereas Map provides logarithmic-time lookup.
 
-An xml_node is normally constructed from an original Raw.xml structure, and it is useful to keep this information for output purposes. It is stored in the orig field.
+An xml_node is constructed from an original Raw.xml structure, and it is useful to keep this information for output purposes. It is stored in the orig field.
 
-[ HOW DO YOU CONVERT RAW TO XML_NODE, JOEL?? ]
+The language of any text content is, like namespaces, an inherited special attribute, and is signified by xml:lang in the attribute list. It is stored in the lang field of the branch, and propagated to leaf Text nodes. This is because a Text instance, in isolation, does not have a reference to its parent, and hence must have its own lang attribute.
+
+The construction of an xml_node from Raw.xml is accomplished by the from_raw_br function. [how much detail?]
 
 Semantic checking and matching
 The text-to-Raw parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of ``pattern matching'' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep], so I went down the route of parsers and combinators modelled after Angstrom.
@@ -209,7 +211,7 @@ I implemented the usual >>= for `bind', *> for `sequence', <|> for `alternative'
 
 (f <|> g) xml is like *>, but with opposite error behaviour: when f xml fails, g xml is tried.
 
-The implementations are all fairly straightforward and similar to each other. For instance, attr:
+The matcher implementations are all fairly straightforward and similar to each other. For instance, attr:
 
 let attr k = function
   | Xml xml -> (match xml.attr k with
@@ -219,20 +221,14 @@ let attr k = function
 
 Out of the above matchers, only text makes sense for text nodes. Unfortunately, because both the low- and high-level XML types incorporate the possibility of text, all matchers except Text have to account for this case at runtime.
 
-Output functions designed for convenience of notation; get around compulsory parentheses for data ctors by using functions; provide common defaults via different functions; namespace automagic. Large input/output asymmetry; output to Raw is fine and natural. Input to Raw: very cumbersome to pattern match, etc. Lists of attrs: quick-and-dirty implementation of key[attr]-value map. Superfluous order, linear scan to retrieve attribute value, full scan to determine absence of attribute. Namespace short/long/default forms not handled, nor inherited / nested namespaces; qname cruft needed approximately 1% of the time. So: enter xml_node; Text augmented with lang... and attr is a function (using Map struct), namespace is a function, etc. Converting Raw to xml_node handles nesting of namespaces.
-
-xml_node enables higher-level combinators (the Check module):
-tag "message" succeeds if the node has the "message" tag (irrespective of namespace considerations)
-qtag functions like tag, but takes a namespace prefix to also check
-attr "id" results in the value of the id attribute if it exists
-attv "id" "1234" succeeds if the id attribute exists and is equal to 1234
-attr_opt is like attr but does not fail, instead resulting in Some value or None
-child gives the first child of the node if it exists
-children gives a list of the node's children (possibly the empty list, so this one also never fails)
-orig results in the low-level Raw representation from which the xml_node was obtained
-text gives the text string of a Text node
-
 xml.ml also contains the hack-y expect and buffered_expect.
+
+The question of buffering
+Angstrom provides the parse_only function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's  parse function produces a state that can be progressively fed input until it finishes.
+
+From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server code (such as the initial handshake).
+
+
 
 The Xmpp module (xmpp.ml)
 This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in [xml], the prefix-namespace pairs used often in XMPP are defined here.
@@ -270,15 +266,32 @@ type item = {
   groups  : string list; (* Membership of contact in groups           *)
 }
 
-This is almost a direct XML-to-OCaml translation of XMPP's <item> element, the main difference being my treatment of the subscription attribute. I felt that the subscription attribute as from, to or both was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: recv_ok (activated by to and both) and send_ok (activated by from and both). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send via send_ok rather than mentally decrypting `to', `from', or `both'. [what happened to groups??]
+This is almost a direct XML-to-OCaml translation of XMPP's <item> element, the main difference being my treatment of the subscription attribute. I felt that the subscription attribute as none, from, to or both was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: recv_ok (activated by to and both) and send_ok (activated by from and both). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via send_ok, rather than mentally decrypting `to' or `from'. [what happened to groups??]
 
 Rosters are managed through the Roster sub-module. After authenticating a client, the server calls Roster.load_from_storage with their username, to ensure that their contact information is available.
 
+Roster.load_from_storage uses Angstrom parsers and the high-level xml_node interface to load the roster file into memory. The only part of this that is slightly interesting is item_of_xml, which constructs an item record from what should be an <item> XML node:
 
+let item_of_xml =
+  let open Xml.Check in
+  tag "item" *> attr "jid" >>= fun jid ->
+    attr "name" >>= fun name ->
+      attr_opt "subscription" >>= ( function
+      | None        -> pure (false,false)
+      | Some "none" -> pure (false,false)
+      | Some "to"   -> pure (true,false)
+      | Some "from" -> pure (false,true)
+      | Some "both" -> pure (true,true)
+      | _ -> fail "Unknown subscription type" ) >>=
+  fun (recv_ok,send_ok) ->
+    pure { jid; name; recv_ok; send_ok; groups=[] }
 
-[roster_from_in_ch, item structure and item_of_xml/to_xml, abandonment of CRUD, view towards testing]
+This demonstrates the utility of the xml_node matchers discussed in [blah]. This function treats the absence of a subscription attribute as equivalent to subscription="none" (hence the use of attr_opt). groups is set to an empty value for the [???] reasons. There is also a corresponding to_xml function acting on item structures.
 
-underpopulated Stanza module (containing Iq only)
+[abandonment of CRUD, view towards testing]
+
+The Stanza module
+
 
 server.ml:
 Dispatch machinery
