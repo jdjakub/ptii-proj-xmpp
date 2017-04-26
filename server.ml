@@ -10,19 +10,20 @@ module Dispatch = struct
 
   let fmt = Printf.sprintf
   let prn_lock = Mutex.create ()
-  let print str =
+
+  let display fn =
     Mutex.lock prn_lock;
-      print_endline str;
+      fn ();
     Mutex.unlock prn_lock
 
   let all_online () =
     Mutex.lock qs_lock;
       let names = List.map fst (M.bindings !queues) in
     Mutex.unlock qs_lock;
-    Mutex.lock prn_lock;
+    display (fun _ ->
       print_endline "All online:";
-      List.iter print_endline names;
-    Mutex.lock prn_lock;
+      List.iter print_endline names
+    );
     names
 
   let client_connected name =
@@ -34,10 +35,10 @@ module Dispatch = struct
       queues := M.add name (q,q_mon,avail,fin) !queues;
       let l = M.bindings !queues in
     Mutex.unlock qs_lock;
-    Mutex.lock prn_lock;
-      print (fmt "Client connected: %s; %d connected clients:" name (List.length l));
-      List.iter (fun (k,_) -> print k) l;
-    Mutex.unlock prn_lock;
+    display (fun _ ->
+      print_endline (fmt "Client connected: %s; %d connected clients:" name (List.length l));
+      List.iter (fun (k,_) -> print_endline k) l
+    );
     (q,q_mon,avail,fin)
 
   let client_disconnected name =
@@ -47,7 +48,7 @@ module Dispatch = struct
     with Not_found -> () );
     Mutex.lock qs_lock;
       queues := M.remove name !queues;
-    Mutex.unlock qs_lock; print (fmt "Client disconnected: %s" name)
+    Mutex.unlock qs_lock; print_endline (fmt "Client disconnected: %s" name)
 
   (*
     worker thread *atomically dequeues* (blocking if empty)
@@ -60,7 +61,7 @@ module Dispatch = struct
       Condition.wait avail mon;
     done;
     if !fin = true then
-      (Mutex.unlock mon; print "Interrupted"; None)
+      (Mutex.unlock mon; print_endline "Interrupted"; None)
     else let work = Queue.take q in
       (Mutex.unlock mon; Some work)
 
@@ -72,7 +73,7 @@ module Dispatch = struct
         Condition.signal avail;
       Mutex.unlock q_mon;
       (*print (fmt "%s: %d" name work)*)
-    with Not_found -> print (fmt "Dropped work for %s" name) (* Drop the packet *)
+    with Not_found -> print_endline (fmt "Dropped work for %s" name) (* Drop the packet *)
 
 end
 
@@ -211,13 +212,24 @@ let sv_start () =
           | None -> Dispatch.all_online () (* By default, everyone's a subscriber! *)
           | Some items -> List.map (fun (_,item) -> item.Xmpp.Roster.jid) items
         in
-        List.iter (fun jid -> if jid <> raw_jid then Dispatch.dispatch jid stanza else () ) subs;
+        List.iter (fun jid ->
+          print_endline ("Considering " ^ jid);
+          if jid <> raw_jid then (
+            print_endline "Notifying of presence";
+            Dispatch.dispatch jid stanza )
+          else
+            print_endline "Not notifying. Already did so."
+        ) subs;
       in
 
       respond_tree Raw.(xml_n "presence" [ "from", raw_jid; "to", jid ] chs);
 
+      print_endline "Rhubarb";
+
       (* Notify all subscribers that the client is online *)
       notify_subs Raw.(xml_n "presence" [ "from", raw_jid ] chs);
+
+      print_endline "Custard";
 
       let work_queue = Dispatch.client_connected raw_jid in
       let stream_lock = Mutex.create () in
@@ -228,7 +240,12 @@ let sv_start () =
           | Some xml ->
             Mutex.lock stream_lock;
               respond_tree xml;
-            Mutex.unlock stream_lock
+            Mutex.unlock stream_lock;
+            (match xml with
+            | Raw.Branch ((_,_,_::((_, "time"), _ )::_),_) ->
+              let t = Unix.gettimeofday () in
+              print_endline ("TIME IS: " ^ (string_of_float t))
+            | _ -> ())
           | None -> finish := true
         done
       ) work_queue in
@@ -253,9 +270,14 @@ let sv_start () =
       let handle_message =
         Xml.Check.(attr "to" >>= fun recipient ->
           attr "type" >>= fun msg_type ->
+          attr_opt "time" >>= fun time_opt ->
           orig >>= fun (Raw.Branch ((_,_,_),chs)) ->
-            pure (recipient, Raw.(xml ("","jabber:client") "message"
-              [ "to", recipient; "from", raw_jid; "type", msg_type ] chs))
+            let attrs = [ "to", recipient; "from", raw_jid; "type", msg_type ] in
+            let attrs = match time_opt with
+              | Some value -> ( "time", value ) :: attrs
+              | None -> attrs
+            in
+            pure (recipient, Raw.(xml ("","jabber:client") "message" attrs chs))
         )
       in
       let finished = ref false in
@@ -279,7 +301,7 @@ let sv_start () =
           ) <|>
           ((raw |> Xml.Check.tag "message") >>= fun to_addr ->
             handle_message raw >>| fun (recip,xml) ->
-              Dispatch.print ("[FWD] " ^ Raw.to_string xml);
+              print_endline ("[FWD] " ^ Raw.to_string xml);
               Dispatch.dispatch recip xml; Ok ()
           )
         ) |> function
