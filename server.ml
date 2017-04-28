@@ -129,6 +129,8 @@ let plain_auth_extract str =
     (nul *> take_till (fun _ -> false))
   in parse_only p (`String str)
 
+let orig_time = ref 0.0
+
 let sv_start () =
   let per_client from_ie to_ie =
     let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
@@ -224,12 +226,8 @@ let sv_start () =
 
       respond_tree Raw.(xml_n "presence" [ "from", raw_jid; "to", jid ] chs);
 
-      print_endline "Rhubarb";
-
       (* Notify all subscribers that the client is online *)
       notify_subs Raw.(xml_n "presence" [ "from", raw_jid ] chs);
-
-      print_endline "Custard";
 
       let work_queue = Dispatch.client_connected raw_jid in
       let stream_lock = Mutex.create () in
@@ -243,7 +241,7 @@ let sv_start () =
             Mutex.unlock stream_lock;
             (match xml with
             | Raw.Branch ((_,_,_::((_, "time"), _ )::_),_) ->
-              let t = Unix.gettimeofday () in
+              let t = Unix.gettimeofday () -. !orig_time in
               print_endline ("TIME IS: " ^ (string_of_float t))
             | _ -> ())
           | None -> finish := true
@@ -318,4 +316,6 @@ let sv_start () =
   in
   Driver.(establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)))
 
-let () = sv_start ()
+let () =
+  orig_time := Unix.gettimeofday ();
+  sv_start ()

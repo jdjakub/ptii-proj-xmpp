@@ -73,14 +73,20 @@ object (self)
 
     Ok (List.map Xmpp.Roster.item_of_xml items)
 
-  method message recpt body =
+  method message ?time recpt body =
+    let attrs = [ "type", "chat"; "to", recpt ^ "@" ^ svname ] in
+    let attrs = match time with
+      | None -> attrs
+      | Some true | Some false -> ( "time", "show" ) :: attrs
+    in
     self#respond_tree
-      Raw.(xml_n "message" [ "type", "chat"; "to", recpt ^ "@" ^ svname ] [
+      Raw.(xml_n "message" attrs [
         body
       ])
 
-  method message_t recpt body =
-    self#message recpt Raw.(text body)
+  method message_t ?time recpt body =
+    self#message ?time recpt Raw.(text body)
+
 
   method disconnect =
     self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] []);
