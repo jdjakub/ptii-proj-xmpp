@@ -276,7 +276,7 @@ let expect buf_r fill p =
         if len_read = 0 then Error "Didn't get anything"
         else
           let inp = Bigstring.sub buffer 0 len_read in
-          let () = print_endline ("[IN]: " ^ Bigstring.to_string inp ^ "[/IN]") in
+          (*let () = print_endline ("[IN]: " ^ Bigstring.to_string inp ^ "[/IN]") in*)
           run (next (`Bigstring inp))
     | Fail (unc,strs,str) ->
         Error (format "Parse error:\n%s\n%s\n" str (String.concat "\n" strs))

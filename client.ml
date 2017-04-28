@@ -93,6 +93,31 @@ object (self)
     self#respond "</stream:stream>"
 
   method spill =
-    self#expect Xml.P.tree >>| Xml.from_raw
+    self#expect Xml.P.tree
 
 end
+
+(* File transcripts/c1.xml etc. contains transcripts written to by
+   worker thread that calls spill(). On error (or timeout?), worker
+   terminates and ought to abort the client's actions too.
+*)
+
+let with_client name body =
+  let cl = new client name "ptii.proj" in
+  cl#handshake;
+  let finish = ref false in
+  let transcript = open_out ("transcripts/" ^ name ^ ".xml") in
+  let transcribe str = output_string transcript str; output_char transcript '\n'; flush transcript in
+  let receiver () =
+    while !finish = false do
+      cl#spill |> function
+      | Error e -> begin
+          transcribe e;
+          finish := true;
+        end
+      | Ok xml -> transcribe (Xml.P.Raw.to_string xml)
+    done;
+    close_out transcript;
+  in
+  Thread.create receiver ();
+  Thread.create (fun () -> body cl finish) ()
