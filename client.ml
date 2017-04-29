@@ -102,9 +102,7 @@ end
    terminates and ought to abort the client's actions too.
 *)
 
-let with_client name body =
-  let cl = new client name "ptii.proj" in
-  cl#handshake;
+let with_client name cl body =
   let finish = ref false in
   let transcript = open_out ("transcripts/" ^ name ^ ".xml") in
   let transcribe str = output_string transcript str; output_char transcript '\n'; flush transcript in
@@ -120,4 +118,4 @@ let with_client name body =
     close_out transcript;
   in
   Thread.create receiver ();
-  Thread.create (fun () -> body cl finish) ()
+  Thread.create (fun () -> body finish) ()

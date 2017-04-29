@@ -1,0 +1,20 @@
+<presence from="1@ptii.proj" to="1@ptii.proj/res"/>
+<presence from="2@ptii.proj"/>
+<presence from="3@ptii.proj"/>
+<presence from="4@ptii.proj"/>
+<presence from="5@ptii.proj"/>
+<presence from="6@ptii.proj"/>
+<presence from="7@ptii.proj"/>
+<presence from="8@ptii.proj"/>
+<presence from="9@ptii.proj"/>
+<message xmlns="jabber:client" to="1@ptii.proj" from="0@ptii.proj" type="chat">Hello, how are you today?</message>
+<presence type="unavailable" from="9@ptii.proj"/>
+<presence type="unavailable" from="2@ptii.proj"/>
+<presence type="unavailable" from="3@ptii.proj"/>
+<presence type="unavailable" from="4@ptii.proj"/>
+<presence type="unavailable" from="5@ptii.proj"/>
+<presence type="unavailable" from="6@ptii.proj"/>
+<presence type="unavailable" from="7@ptii.proj"/>
+<presence type="unavailable" from="8@ptii.proj"/>
+<presence type="unavailable" from="0@ptii.proj"/>
+Didn't get anything
