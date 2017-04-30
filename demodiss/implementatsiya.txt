@@ -221,14 +221,16 @@ let attr k = function
 
 Out of the above matchers, only text makes sense for text nodes. Unfortunately, because both the low- and high-level XML types incorporate the possibility of text, all matchers except Text have to account for this case at runtime.
 
-xml.ml also contains the hack-y expect and buffered_expect.
-
 The question of buffering
-Angstrom provides the parse_only function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's  parse function produces a state that can be progressively fed input until it finishes.
+Angstrom provides the parse_only function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's parse function produces a state that can be progressively fed input until it finishes.
 
-From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server code (such as the initial handshake).
+From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server and client code (such as the initial handshake). Functions for responding to the client were simple, generally consisting of output to a channel plus a flush of the channel. The `expect' function, though, was more involved.
 
+Angstrom's Buffered interface maintains an internal buffer, of type Bigstring. After a successful parse, some of the data in the buffer may be unconsumed. It is the caller's responsibility to ensure parsing continues where it left off, and this is handled by the function passing the relevant sub-buffer each time it is needed. When everything has been consumed, the buffer needs refilling from the network. Unfortunately, the standard library's input function reads data into a Bytes-type buffer and not a Bigstring. To bridge this gap, I split my originally desired 1024-byte buffer into a Bytes and Bigstring of 512 bytes each. input reads into the Bytes, which is then blitted to the Bigstring, which can then be passed to Angstrom for parsing.
 
+The user-level expect function takes an Angstrom parser (usually P.tree) and tries to parse from these internal network-backed buffers. It returns a result value, and is often used in tandem with the high-level XML functions like so:
+
+expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
 
 The Xmpp module (xmpp.ml)
 This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in [xml], the prefix-namespace pairs used often in XMPP are defined here.
@@ -293,8 +295,27 @@ This demonstrates the utility of the xml_node matchers discussed in [blah]. This
 The Stanza module
 
 
-server.ml:
-Dispatch machinery
+The server program:
+Work-dispatching machinery (the Dispatch module)
+
+On the server, per client, post-handshake:
+
+Sets up worker thread to forward stanzas to the client. Obtains stanzas via dequeue_work on work queue created by client_connected.
+
+Main thread reacts to messages arriving, forwards to appropriate worker thread by means of dispatch <jid> <stanza>
+
+Global jid -> work-queue map, protected by mutex
+
+Each work-queue has a Queue data structure and a Condition (`monitor' pattern) for `work available' plus its associated mutex. Also a `finished' boolean so worker thread can finish and quit gracefully.
+
+dispatch pushes the work to the appropriate queue, signalling `available'
+
+dequeue_work blocks waiting on `available'; if the `finished' flag is set, produces None after queue empties, signalling to the worker thread to exit. Otherwise, produces Some <work>
+
+client_disconnected sets the `finished' flag and signals, then removes client from the global map.
+
+
+
 sv_start driver
 per_client; XMPP handshake
 
@@ -307,6 +328,17 @@ When Driver.establish_server accepts a client connection, it opens a read and a 
 All of these stages make use of the Result monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
 
 Setup
+After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the <stream> opening element from the client, and responds with its own. It looks like this:
+
+let stream_handshake id =
+  expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
+    Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
+  let response = Raw.(to_string_open (xml_d Xmpp.jstream "stream" [
+    "xmlns", snd Xmpp.jclient;
+    "version", "1.0"; "from", my_addr; "id", id;
+  ] []))
+  in respond response; Ok (my_addr, id)
+
 
 
 

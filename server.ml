@@ -20,10 +20,10 @@ module Dispatch = struct
     Mutex.lock qs_lock;
       let names = List.map fst (M.bindings !queues) in
     Mutex.unlock qs_lock;
-    display (fun _ ->
+    (*display (fun _ ->
       print_endline "All online:";
       List.iter print_endline names
-    );
+    );*)
     names
 
   let client_connected name =
@@ -35,10 +35,10 @@ module Dispatch = struct
       queues := M.add name (q,q_mon,avail,fin) !queues;
       let l = M.bindings !queues in
     Mutex.unlock qs_lock;
-    display (fun _ ->
+    (*display (fun _ ->
       print_endline (fmt "Client connected: %s; %d connected clients:" name (List.length l));
       List.iter (fun (k,_) -> print_endline k) l
-    );
+    );*)
     (q,q_mon,avail,fin)
 
   let client_disconnected name =
@@ -61,7 +61,7 @@ module Dispatch = struct
       Condition.wait avail mon;
     done;
     if !fin = true then
-      (Mutex.unlock mon; print_endline "Interrupted"; None)
+      (Mutex.unlock mon; (*print_endline "Interrupted";*) None)
     else let work = Queue.take q in
       (Mutex.unlock mon; Some work)
 
@@ -73,7 +73,7 @@ module Dispatch = struct
         Condition.signal avail;
       Mutex.unlock q_mon;
       (*print (fmt "%s: %d" name work)*)
-    with Not_found -> print_endline (fmt "Dropped work for %s" name) (* Drop the packet *)
+    with Not_found -> () (*print_endline (fmt "Dropped work for %s" name) (* Drop the packet *)*)
 
 end
 
@@ -133,7 +133,7 @@ let orig_time = ref 0.0
 
 let sv_start () =
   let per_client from_ie to_ie =
-    let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
+    let respond str = (*print_endline ("[OUT]: " ^ str);*) output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
     let expect = Xml.buffered_expect from_ie in
     let stream_handshake id =
@@ -215,12 +215,12 @@ let sv_start () =
           | Some items -> List.map (fun (_,item) -> item.Xmpp.Roster.jid) items
         in
         List.iter (fun jid ->
-          print_endline ("Considering " ^ jid);
+          (*print_endline ("Considering " ^ jid);*)
           if jid <> raw_jid then (
-            print_endline "Notifying of presence";
+            (*print_endline "Notifying of presence";*)
             Dispatch.dispatch jid stanza )
           else
-            print_endline "Not notifying. Already did so."
+            () (*print_endline "Not notifying. Already did so."*)
         ) subs;
       in
 
@@ -299,7 +299,7 @@ let sv_start () =
           ) <|>
           ((raw |> Xml.Check.tag "message") >>= fun to_addr ->
             handle_message raw >>| fun (recip,xml) ->
-              print_endline ("[FWD] " ^ Raw.to_string xml);
+              (*print_endline ("[FWD] " ^ Raw.to_string xml);*)
               Dispatch.dispatch recip xml; Ok ()
           )
         ) |> function
@@ -310,7 +310,7 @@ let sv_start () =
       Thread.join worker;
       !res
     ) |> function
-    | Ok _ -> print_endline "[SUCCESS]"; Ok () (* respond "</stream:stream>" *)
+    | Ok _ -> (*print_endline "[SUCCESS]"*); Ok () (* respond "</stream:stream>" *)
     | Error err -> respond "</stream:stream>"; Error err
 
   in

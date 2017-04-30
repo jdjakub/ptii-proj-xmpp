@@ -1,0 +1,12 @@
+Evaluation
+
+---< PINK BOOK >---
+Assessors look for SIGNS OF SUCCESS and evidence of THOROUGH AND SYSTEMATIC (gulp) testing. Sample output, tables of TIMINGS may be included. As with code, though, voluminous examples of sample output are best left to appendices or just omitted.
+
+Obvious questions to address. How many of the original GOALS were ACHIEVED? Did the program WORK?
+
+It should always be possible to demonstrate that a program works in SIMPLE CASES and it is instructive to demonstrate how close it is to working in a really AMBITIOUS case.
+---</ PINK BOOK>---
+
+Messaging between clients
+I identified four main dimensions to parameterise messaging: Topology (who sends to whom; number of graph edges), Send Rate (how fast clients generate and send new messages), the number of messages each client sends, and the number of clients (number of graph vertices).
