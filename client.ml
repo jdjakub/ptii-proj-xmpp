@@ -87,7 +87,6 @@ object (self)
   method message_t ?time recpt body =
     self#message ?time recpt Raw.(text body)
 
-
   method disconnect =
     self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] []);
     self#respond "</stream:stream>"

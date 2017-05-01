@@ -26,11 +26,11 @@ First, a note on terminology. XML is a notation for hierarchical trees, and an X
 
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' xmlns:foo="bar" is treated specially as saying that the prefix foo represents the namespace bar. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by xmlns="bar". These associations are local to the node in the tree and are inherited by its children. There may be other uses of the xmlns: prefix, but I considered namespace definition as the only aspect relevant to this project.
 
-Both explicit and default prefixes are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the body element of HTML could be written <html:body> (as long as the html prefix referred to the HTML namespace), <body> (provided HTML was the default namespace), or even <quux:body> (if quux referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial <stream> element needs to use the stream: prefix, for unknown reasons. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
+Both explicit and default prefixes are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the body element of HTML could be written <html:body> (as long as the html prefix referred to the HTML namespace), <body> (provided HTML was the default namespace), or even <quux:body> (if quux referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial <stream> element needs to use the stream: prefix. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
 
 XML-as-text is suitable only for human comprehension; computationally, being a long unstructured block of bytes, it is unsuitable for computer processing. XMPP, though, is built around sending and receiving XML via text, so the ability to parse incoming XML and output XML text was fundamental. The Xml.P module contains Angstrom parsers for XML syntax, producing a `literal' abstract representation defined in Xml.P.Raw. Functions for converting this back into text, for output purposes, also live in Xml.P.Raw.
 
-The main Angstrom parser is tree, which converts nested open/close tags and embedded text into a Raw.Branch node, or Raw.Text if the whole thing consists of just text. This suffices for most of XMPP, but there are some situations that do not involve fully completed trees. For example, setting up the client-server XML stream involves only the opening tag of the stream element; likewise, terminating the stream requires the closing tag. Thus, I included tag_open and tag_close. In addition, before opening the stream, an XML declaration <?xml version="1.0"?> is needed, which uses slightly different syntax to XML tags. Since this syntax does not appear anywhere else, I used a custom parser for this purpose.
+The main Angstrom parser is tree, which converts nested opening/closing tags and embedded text into a Raw.Branch node, or Raw.Text if the whole thing consists of just text. This suffices for most of XMPP, but there are some situations that do not involve fully completed trees. For example, setting up the client-server XML stream involves only the opening tag of the stream element; likewise, terminating the stream requires the closing tag. Thus, I included tag_open and tag_close. In addition, before opening the stream, an XML declaration <?xml version="1.0"?> is needed, which uses slightly different syntax to XML tags. Since this syntax does not appear anywhere else, I used a custom parser for this purpose.
 
 These parsers are all implemented in terms of smaller named parsers, combined using the Angstrom parser combinators. For example, I defined tag_open this way:
 
@@ -294,6 +294,11 @@ This demonstrates the utility of the xml_node matchers discussed in [blah]. This
 
 The Stanza module
 
+Meant to bring stanza formats into the type level
+
+Iq sub-module has Iq.t (record with request ID and further data dependent on the type attribute) and Iq.of_xml
+
+Did not extend with Message / Presence sub-modules since they are not as general or varied as Iq; managed fine without type-level message or presence stanzas
 
 The server program:
 Work-dispatching machinery (the Dispatch module)
@@ -314,8 +319,6 @@ dequeue_work blocks waiting on `available'; if the `finished' flag is set, produ
 
 client_disconnected sets the `finished' flag and signals, then removes client from the global map.
 
-
-
 sv_start driver
 per_client; XMPP handshake
 
@@ -327,11 +330,11 @@ When Driver.establish_server accepts a client connection, it opens a read and a 
 
 All of these stages make use of the Result monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
 
-Setup
-After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the <stream> opening element from the client, and responds with its own. It looks like this:
+Setup stage
+After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the <stream> opening element from the client (after an XML declaration), and responds with its own. It looks like this:
 
 let stream_handshake id =
-  expect A.(P.xml_decl *> P.tag_open) >>| X.from_raw >>=
+  expect A.(P.xml_decl *> P.tag_open) >>| Xml.from_raw >>=
     Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
   let response = Raw.(to_string_open (xml_d Xmpp.jstream "stream" [
     "xmlns", snd Xmpp.jclient;
@@ -339,9 +342,54 @@ let stream_handshake id =
   ] []))
   in respond response; Ok (my_addr, id)
 
+This makes use of all the main concepts from the Xml module. The expect function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening <stream> element. A successful result is converted to a high-level xml_node, which is then checked for the correct tag and relevant data extracted. A similar response follows, constructed via the helper functions in Xml.Raw, giving the client a stream ID to use. The function returns the information obtained: the stream ID and the server's Web address (ptii.proj is used throughout this project).
 
+Offers the list of stream features to negotiate. Sole element is the required authentication mechanism; server offers PLAIN auth only
 
+After client chooses PLAIN, extracts login information from base64-encoded text with a special Angstrom parser. Responds with `success' to client. Obvious extension point for user accounts, encryption, proper authentication etc.
 
-client.ml:
-object rationale
-symmetric duplication of server.ml :/
+Now username has been obtained, loads client's roster into memory, if it exists.
+
+Restarts the stream by handshaking again as per XMPP spec. Offers features again, this time consisting of the required process to bind a resource. Accomplished via <iq> stanzas, using the Stanza.Iq helpers. Returns client's full JID incorporating their username, server address and resource.
+
+Expects an <iq> `set' session request, to formally establish the session, responds with empty <iq> signalling success. Optional behaviour according to the spec, but implemented as Psi performs this step.
+
+Expects initial request for roster, responds with whatever roster data is specified in the roster/ directory. If none, responds with empty roster, even though this is treated specially for testing as a universal subscription, to / from everyone.
+
+Expects initial presence, followed by echoing back to the client and forwarding to its subscribers. If universally subscribed, obtains list of currently online clients from the Dispatch module, filtering out this client from the list before forwarding.
+
+Setup is finished, now moves into servicing incoming stanzas.
+
+Service stage
+
+Calls Dispatch.client_connected to obtain work queue. Sets up worker thread, which loops extracting from the queue and forwarding the stanzas to the client. Watches for a time attribute on <message>s; if found, prints out system time via Unix.gettimeofday (). Not part of XMPP spec; used for timing during test/eval.
+
+Next, enters loop expecting stanzas and behaving accordingly. Main behaviour separated into handle_iq, handle_presence, handle_message. Auxiliary behaviour such as parsing the stanzas and handling errors lives in the loop body.
+
+handle_iq returns an Iq.t representing the stanza error feature-not-implemented. Calling code translates this into the actual XML and responds.
+
+handle_presence watches for the final <presence type="unavailable" /> that signifies the client's wish to disconnect, returning a value that the calling code uses to end the loop.
+
+handle_message ensures <message> elements have a valid source and destination, returning the message and the recipient to deliver it to. The calling code then uses Dispatch.dispatch to send it on its way.
+
+Once the loop finished, Dispatch.client_disconnected is called to cut off the stream of stanzas into the worker thread. The main thread then waits for the worker to process what remains in its queue before terminating. Finally, the closing </stream:stream> is sent and the socket is closed as per_client finishes. This stage can actually be reached prematurely if stream errors occur during setup or service, and if so the error is returned and printed out.
+
+The Client module:
+
+object rationale; easier to have each client with its own state (sockets, buffers) and command via client1#handshake etc, especially in toplevel for experimentation.
+
+Handshake designed to be symmetric to server's and ensure it all goes smoothly. Not designed to anticipate variation from the server; purely for testing. Uses dummy password.
+
+Constructor client connects and stores username for later.
+
+#handshake method performs handshake, returns roster.
+
+#message recpt body sends the body XML via a <message> to recpt@ptii.proj. Takes optional time boolean flag, to order the server to display the time at the point of forwarding to recipient.
+
+#message_t recpt text is a more user-friendly version where the body consists of just text.
+
+#disconnect sends <presence type="unavailable"> and closing </stream:stream>.
+
+#spill extracts one XML element / tree from client's receive buffer, and returns it.
+
+Testing utility function with_client. Spawns transcriber thread and action thread. Action thread executes a user-defined function, usually involving sending messages. Transcriber repeatedly calls #spill on the client and logs the received XML in transcripts/<clientname>.xml. On error, transcriber sets boolean `finished' flag that action thread should use to abort early, and quits. Action thread can set `finished' at the end of its life to cause the transcriber to quit, if desired. with_client returns the action thread.

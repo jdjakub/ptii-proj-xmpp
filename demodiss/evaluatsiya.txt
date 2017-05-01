@@ -8,5 +8,37 @@ Obvious questions to address. How many of the original GOALS were ACHIEVED? Did 
 It should always be possible to demonstrate that a program works in SIMPLE CASES and it is instructive to demonstrate how close it is to working in a really AMBITIOUS case.
 ---</ PINK BOOK>---
 
+Handshake; connect/disconnect
+Show a session with Psi. Show results of simple multi-client messaging scenario (see round-robin under `messaging')
+
+Presence notifications
+These happen as clients connect and disconnect. I am not sure if it will be worth performance-testing this; I may just make sure this works as intended, by ensuring the flow of presence conforms to rosters when they are available.
+
+Have roster/alice.xml, roster/bob.xml, roster/caroll.xml. Have a nontrivial subscription graph demonstrating from, to, both. Show that all 6 orders of connection (disconnect in reverse order for simplicity) produce the correct presence-notification patterns in accordance with the rosters.
+
+Roster management
+This intersects with presence notifications; the only other thing to do here is check that it gives the correct response to the clients' initial get-roster requests. The lack of CRUD operations means there is little else to do.
+
 Messaging between clients
-I identified four main dimensions to parameterise messaging: Topology (who sends to whom; number of graph edges), Send Rate (how fast clients generate and send new messages), the number of messages each client sends, and the number of clients (number of graph vertices).
+I identified five main dimensions to parameterise messaging: Topology (who sends to whom; number and character of graph edges), Send Rate (how fast clients generate and send new messages), the number of messages each client sends, the number of clients (number of graph vertices) and the complexity of message bodies.
+
+Topology is far too variable to explore thoroughly; instead, I consider the following to be `interesting':
+  Round-robin, for simplicity. Possibly too uninteresting or limited for serious timing, but serves to check if the server actually works. Client i sends to client i+1, with wraparound for the last client.
+
+  Random: Each client picks a uniformly random recipient (excluding itself) for each message. `Surely', if averaged over (3? 5?) sample runs, it will be a good measure of throughput?
+
+  Complete: Everyone sends each message to everyone else.
+
+For performance testing and timing, I think I will go for Random topology; Complete might be useful when looking for a breaking point.
+
+Number of clients is easy to vary, but I wonder if this could cause my client programs to break before the server does. Still, one graph: All other things fixed, number of clients vs average throughput.
+
+Throughput estimated by taking reference time, proceeding with the messages and activity and then taking a final time measurement; divide delta by number of messages.
+
+Easiest if all clients connect first, then messaging proceeds, then all disconnect.
+
+Send rate: ``as fast as they can''. Nontrivial to ensure clients send at a particular rate per second; plus, this would really invalidate my primitive timing strategy as it would incorporate `too much' of the time clients don't spend doing anything. At least when ``as fast as possible'', this effect is minimised.
+
+Number of messages (per client): Don't see the point in systematically varying it; high enough to be meaningful, low enough for the test not to take forever.
+
+Complexity of message bodies: Unsure. Not as relevant as other concerns, since most XMPP messages won't consist of heavily nested XML. Keep as a constant `lorem ipsum' type paragraph.
