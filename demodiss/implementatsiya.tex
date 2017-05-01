@@ -2,7 +2,7 @@
 As the objective of this project was to build a server, I developed a server program (\code{server.ml}). I used the Psi client software to help develop the server, but for later testing a more automatable client was needed. For this reason, I also developed a basic XMPP client controller (\code{client.ml}).
 These both make heavy use of the \code{Xml} and \code{Xmpp} modules.
 
-\section{The \code{Xml} module}
+\section{The \code{Xml} module}\label{sec:xmlmod}
 XML is central to XMPP. In my code, it comes in three main forms: as text, as low-level `Raw' XML, and as high-level \code{xml_node}. The \code{Xml} module provides utilities for working with these representations.
 
 First, a note on terminology. XML is a notation for hierarchical trees, and an XML node \footnote{Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'. This case is obviously handled, but does not have any terminological considerations.} has the form
@@ -55,7 +55,7 @@ As an XML node can be simple text, this is accounted for by assuming text conten
 \subsection{The \code{Raw} module}
 As mentioned, the \code{Raw} module contains the `literal' abstract XML representation that these parsers target. Consider
 
-\begin{lstlisting}[language=xml]
+\begin{lstlisting}[language=xml,label={lst:xmlsample}]
 <foo:error type="fatal" xmlns:foo="long-application-namespace" >
   <a></a>
   <b></b>
@@ -83,3 +83,203 @@ Branch ( ("foo", "error", [
 Note the `literal' interpretation of the attribute list as an actual OCaml list. Technically, the order of XML attributes does not matter, but it is simpler to use a list at this level. Also, the special considerations of namespaces and prefixes are not handled at this level; it sees \code{xmlns:foo="bar"} as just another attribute.
 
 The \code{Raw} module provides functions to convert its data structures into strings. The main \code{to_string} function, which recursively serialises an XML tree, is as follows:
+
+\begin{lstlisting}[language=ml]
+let rec to_string = function
+  | Text str -> str
+  | (Branch ((ns,tag,attrs),children)) as xml ->
+    match children with
+    | [] -> to_string_single (ns,tag,attrs)
+    | _  -> let interior = String.concat "" (List.map to_string children) in
+            to_string_open xml ^ interior ^ to_string_close xml
+\end{lstlisting}
+
+An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags. [indentation?] [sanitisation?][more on to_string_open, string_of_qname, string_of_attrs]
+
+\subsubsection{Utility constructors}
+Initially, having the \code{Raw} representation and its serialisation functions, I simply used them to generate the server responses. However, many elements needed at least a default namespace, all prefixes needed to be explicitly specified, and the syntax was very heavy to write and read:
+
+\begin{lstlisting}[language=ml]
+respond_tree
+  (X.Xml (("stream","features",[]),[
+    X.Xml (("","mechanisms",[(("","xmlns"),Xmpp.sasl)]),[
+        X.Xml (("","mechanism",[]),[ X.Text "PLAIN" ]);
+        X.Xml (("","required",[]),[])
+      ])
+  ]));
+\end{lstlisting}
+
+After consideration, I reasoned that it would be easier in the long run to add some conveniences for such construction of XML trees in OCaml code. Firstly, I wanted to avoid writing prefixes. The tags mostly use the default (empty) prefix, and the only attribute prefix that is ever used is \code{xmlns:}. By handling namespaces in a more convenient fashion, I could avoid having to specify prefixes for both tags and attributes altogether.
+
+For the purposes of output, I committed to using only one, standard prefix per namespace (recall that prefixes are local to parts of a tree, but such freedom is not really needed here). I bundled namespaces and prefixes together, so that I could refer to them by a simple OCaml identifier. For example, the opening \code{<stream:stream>} element uses the stream prefix, referring to the namespace \code{http://etherx.jabber.org/streams}. I made definitions (in the \code{Xmpp} module) like so:
+
+\begin{lstlisting}[language=ml]
+let jstream  = ("stream","http://etherx.jabber.org/streams")
+let jclient  = ("client","jabber:client")
+let jserver  = ("server","jabber:server")
+\end{lstlisting}
+
+Other namespaces were only ever used with the default (empty) prefix. I did the same with them:
+
+\begin{lstlisting}[language=ml]
+let streams = ("","urn:ietf:params:xml:ns:xmpp-streams")
+let session = ("","urn:ietf:params:xml:ns:xmpp-session")
+let sasl    = ("","urn:ietf:params:xml:ns:xmpp-sasl")
+let bind    = ("","urn:ietf:params:xml:ns:xmpp-bind")
+...
+\end{lstlisting}
+
+I developed convenience functions to construct XML trees using this: \code{xml_d}, \code{xml}, \code{xml_n}, and \code{text}.
+
+For \code{xml_n}, the \code{n} stands for ``no namespace''. This is used for child XML that does not use namespaces at all. For example, the following:
+\begin{lstlisting}
+xml_n "rectangle" [ "width", "240"; "height", "180" ] [
+  text "Sample text"
+]
+\end{lstlisting} constructs the \code{Raw.xml}
+\begin{lstlisting}
+Raw.Xml (("","rectangle",[(("","width"),"240"); (("","height"),"180")]),[
+  Raw.Text "Sample text"
+]
+\end{lstlisting}
+
+\code{xml_d} means `declare'. It is similar to \code{xml_n}, but accepts a prefix-namespace pair. It applies the prefix to the tag and declares the association between prefix and tag in the attributes, automatically. This means that example \ref{lst:xmlsample} could be constructed like so:
+
+\begin{lstlisting}[language=ml]
+module Xmpp = struct
+  ...
+  let foo = ("foo", "long-application-namespace")
+  ...
+end
+
+xml_d Xmpp.foo [ "type", "fatal" ] [
+  xml_n "a" [] [];
+  xml_n "b" [] [];
+  text "Sample text"
+]
+\end{lstlisting}
+
+Finally, \code{xml} is a somewhat idiosyncratic variant that exists for child XML that can use a prefix, but does not declare it. [made sense at the time ... rather obscure motivation. probably worth leaving out --- though it \emph{is} used in code samples!]
+
+The advantages of this notation are clear: high signal-to-noise ratio\footnote{OCaml's data constructors are not curried, requiring parentheses, whereas function application does not require them. Also, in some situations, such as lists, it is legal to drop parentheses in pairs: \code{[ (x,y); (z,w) ]} becomes \code{[ x,y; z,w ]}.}, and the use of functions allows automatic handling of namespaces. The end result is that the code finally looks somewhat like the thing it represents.
+
+\subsection{High-level \code{xml_node}}
+The higher-level representation, xml_node, exists for situations where \code{Raw}'s data structures become unwieldy. It is defined as follows:
+
+\begin{lstlisting}[lanuage=ml]
+type xml_node =
+| Text of lang * string
+| Xml of {
+  tag    : qname;
+  attr   : string -> string option;
+  attr_full : qname -> string option;
+  namespace : string -> string option;
+  lang  : lang;
+  child : xml_node list;
+  orig  : P.Raw.xml;
+}
+\end{lstlisting}
+
+The main improvement is the use of an opaque attribute lookup function, rather than an explicit data structure. \code{attr_full} takes a qualified name, but since most attributes do not have a namespace prefix, the more convenient attr is also provided. \code{attr} is implemented as calling \code{attr_full} with an empty namespace prefix.
+
+One consideration with namespaces is that prefix-namespace mappings are inherited to child nodes of their declaration site. \code{xml_node} incorporates this functionality into the namespace function. It finds the namespace associated with a prefix, delegating to the parent node if unsuccessful. [expand on how exaclty I accomplished this]
+
+\code{attr}, \code{attr_full} and namespace all internally use the standard library's \code{Map} structure, being more appropriate for lookup than lists; lists require a linear scan to locate a mapping, and a full scan of the list to determine its absence, whereas \code{Map} provides logarithmic-time lookup.
+
+An \code{xml_node} is constructed from an original \code{Raw.xml} structure, and it is useful to keep this information for output purposes. It is stored in the \code{orig} field.
+
+The language of any text content is, like namespaces, an inherited special attribute, and is signified by \code{xml:lang} in the attribute list. It is stored in the \code{lang} field of the branch, and propagated to leaf \code{Text} nodes. This is because a \code{Text} instance, in isolation, does not have a reference to its parent, and hence must have its own \code{lang} attribute.
+
+The construction of an \code{xml_node} from \code{Raw.xml} is accomplished by the \code{from_raw_br} function. [how much detail to go into on this?]
+
+\subsubsection{Semantic checking and matching}
+The text-to-\code{Raw} parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of ``pattern matching'' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep anyway; perhaps I should prioritise this reason], so I went down the route of parsers and combinators modelled after Angstrom.
+
+Unlike Angstrom's parsers, which are designed to be fairly orthogonal fundamental building blocks of more complex parsers, mine are deliberately special-purpose. I went with whatever would be useful to write readable code, without necessarily being exhaustive in the range of behaviours achievable by combining them.
+
+I viewed a `matcher' as a function accepting an \code{xml_node} and returning a \code{Result} value. Composition of matchers was then to involve both composition of functions, and composition of \code{Result} values. \footnote{The resulting library could be seen as a fusion of the Function and \code{Result} monads. Application of a matcher to an \code{xml_node} is simple function application.
+
+The matchers live in the \code{Xml.Check} module. The main ones are \code{tag} / \code{qtag}, \code{attr} / \code{attr_opt}, \code{attv}, \code{child} / \code{children}, \code{orig} and \code{text}.
+
+\begin{itemize}
+  \item \code{tag "message"} succeeds if the node has the \code{message} tag
+
+  \item \code{qtag} functions like \code{tag}, but takes a namespace prefix to also check
+
+  \item \code{attr "id"} results in the value of the \code{id} attribute if it exists
+
+  \item \code{attv "id" "1234"} succeeds if the \code{id} attribute exists and is equal to 1234
+
+  \item \code{attr_opt} is like \code{attr} but does not fail, instead resulting in \code{Some <value>} or \code{None}
+
+  \item \code{child} gives the first child of the node if it exists
+
+  \item \code{children} gives a list of the node's children (possibly the empty list, so this one also never fails)
+
+  \item \code{orig} results in the low-level \code{Raw} representation from which the \code{xml_node} was obtained
+
+  \item \code{text} gives the text string of a \code{Text} node
+\end{itemize}
+
+I avoid using the word `return' here, as strictly what these functions return is a \code{Result}, possibly containing the `resulting' value --- or an error. For those that merely check some condition rather than retrieve a value (\code{tag}/\code{qtag} and \code{attv}), I say they `succeed' instead\footnote{This could mean `resulting' in the value \code{()}, but I actually found it more useful to `result' in the \code{xml_node} passed in.}.
+
+\subsubsection{Matcher combinators}
+The combinators let me write XML matching code resembling, as closely as possible in OCaml\footnote{Short of syntax extensions perhaps, which I am unfamiliar with}, the XML itself:
+
+\begin{lstlisting}
+tag "iq" *> attv "type" "get" *> attr "id" >>= fun id ->
+  (* id is now bound to the "id" attribute *)
+  ...
+\end{lstlisting}
+
+This would succeed on the XML node
+\begin{lstlisting}[language=xml]
+<foo:iq type="get" id="123" > ... </foo:iq>.
+\end{lstlisting}
+
+I implemented the usual \code{>>=} for `bind', \code{*>} for `sequence', \code{<|>} for `alternative' and the direction-reversed versions where needed.
+
+\begin{itemize}
+  \item \code{(f >>= fun x -> g) xml} first performs \code{f xml}; if successful, it binds the result value to \code{x} and returns \code{g xml}. Otherwise, if \code{f xml} fails, it aborts with the error value.
+
+  \item \code{(f *> g) xml} is like \code{>>=} but discards the result, binding no values. In this sense, it sequences a `check' with a check or match, although this is a conceptual distinction that is not enforced in the code.
+
+  \item \code{(f <|> g) xml} is like \code{*>}, but with opposite error behaviour: when \code{f xml} fails, \code{g xml} is tried.
+\end{itemize}
+
+The matcher implementations are all fairly straightforward and similar to each other. For instance, \code{attr}:
+
+\begin{lstlisting}[language=ml]
+let attr k = function
+  | Xml xml -> (match xml.attr k with
+    | Some v -> Ok v
+    | None -> Error (format "Expected %s attribute in <%s> tag" k (snd xml.tag)) )
+  | Text _ -> Error "Expected XML, not content"
+\end{lstlisting}
+
+Out of the above matchers, only \code{text} makes sense for text nodes. Because both the low- and high-level XML types incorporate the possibility of text, all matchers except \code{text} have to account for this case at runtime.
+
+\subsubsection{The question of buffering}
+Angstrom provides the \code{parse_only} function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's \code{parse} function produces a state that can be progressively fed input until it finishes.
+
+From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server and client code (such as the initial handshake). Functions for responding to the client were simple, generally consisting of output to a channel plus a flush of the channel. The `expect' function, though, was more involved.
+
+Angstrom's \code{Buffered} interface maintains an internal buffer, of type \code{Bigstring}. After a successful parse, some of the data in the buffer may be unconsumed. It is the caller's responsibility to ensure parsing continues where it left off, and this is handled by the function passing the relevant sub-buffer each time it is needed. When everything has been consumed, the buffer needs refilling from the network. Unfortunately, the standard library's \code{input} function reads data into a \code{Bytes}-type buffer and not a \code{Bigstring}. To bridge this gap, I split my originally desired 1024-byte buffer into a \code{Bytes} and \code{Bigstring} of 512 bytes each. \code{input} reads into the \code{Bytes}, which is then blitted to the \code{Bigstring}, which can then be passed to Angstrom for parsing.
+
+The user-level \code{expect} function takes an Angstrom parser (usually \code{P.tree}) and tries to parse from these internal network-backed buffers. It returns a \code{Result} value, and is often used in tandem with the high-level XML functions like so:
+
+\begin{lstlisting}[language=ml]
+expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
+\end{lstlisting}
+
+\section{The \code{Xmpp} module}
+This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in \ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
+
+\subsection{The Roster}
+`Roster' is simply XMPP jargon for what is functionally a contact list. [perhaps much of the rationale in this section should go in preparation.]
+
+The username \code{alice} has a roster file located in the \code{roster/} directory called \code{alice.xml}. It consists of a list of XMPP roster \code{<item>} elements. Each item describes another user, and the subscription status between the two users.
+
+The concept of subscription has design ramifications worth discussing. The word is used in its usual sense: if user A is subscribed to user B, then A will receive updates about B's presence on the network. This is a directed relation; B might not be subscribed to A. Thus, conceptually, subscription is a directed graph that needs to be stored on disk as well as in memory. There is, then, a choice of how to represent this graph.
+
+The two main options for graph representation are adjacency list and adjacency matrix.

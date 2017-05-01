@@ -146,7 +146,7 @@ xml_d Xmpp.foo [ "type", "fatal" ] [
 
 Finally, xml is a somewhat idiosyncratic variant that exists for child XML that can use a prefix, but does not declare it. [goddammit... doesn't make any bleedin sense!]
 
-The advantages of this notation are clear: high signal-to-noise ratio [footnote OCaml's data constructors are not curried, requiring parentheses, whereas function application does not require them. Also, in some situations, such as lists, it is legal to drop parentheses in pairs: [ (x,y); (z,w) ] becomes [ x,y; z,w ]. ], and the use of functions allows automatic handling of namespaces. The end result is that the code finally looks like the thing it represents.
+The advantages of this notation are clear: high signal-to-noise ratio [footnote OCaml's data constructors are not curried, requiring parentheses, whereas function application does not require them. Also, in some situations, such as lists, it is legal to drop parentheses in pairs: [ (x,y); (z,w) ] becomes [ x,y; z,w ]. ], and the use of functions allows automatic handling of namespaces. The end result is that the code finally looks somewhat like the thing it represents.
 
 High-level xml_node
 The higher-level representation, xml_node, exists for situations where Raw's data structures become unwieldy. It is defined as follows:
@@ -180,7 +180,7 @@ The text-to-Raw parsers solve the problem of structuring XML and detecting synta
 
 Unlike Angstrom's parsers, which are designed to be fairly orthogonal fundamental building blocks of more complex parsers, mine are deliberately special-purpose. I went with whatever would be useful to write readable code, without necessarily being exhaustive in the range of behaviours achievable by combining them.
 
-I viewed a `matcher' as a function accepting an xml_node and returning a Result value. Composition of matchers was then to involve both composition of functions, and composition of Result values. The resulting library could be seen as a fusion of the Function and Result monads. [should be footnote?] Application of a matcher to an xml_node is simple function application.
+I viewed a `matcher' as a function accepting an xml_node and returning a Result value. Composition of matchers was then to involve both composition of functions, and composition of Result values. [footnote The resulting library could be seen as a fusion of the Function and Result monads.] Application of a matcher to an xml_node is simple function application.
 
 The matchers live in the Xml.Check module. The main ones are tag / qtag, attr / attr_opt, attv, child / children, orig and text.
 
@@ -219,7 +219,7 @@ let attr k = function
     | None -> Error (format "Expected %s attribute in <%s> tag" k (snd xml.tag)) )
   | Text _ -> Error "Expected XML, not content"
 
-Out of the above matchers, only text makes sense for text nodes. Unfortunately, because both the low- and high-level XML types incorporate the possibility of text, all matchers except Text have to account for this case at runtime.
+Out of the above matchers, only text makes sense for text nodes. Because both the low- and high-level XML types incorporate the possibility of text, all matchers except text have to account for this case at runtime.
 
 The question of buffering
 Angstrom provides the parse_only function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's parse function produces a state that can be progressively fed input until it finishes.
@@ -228,11 +228,11 @@ From the beginning, I found it useful to employ an ``expect-input, respond-outpu
 
 Angstrom's Buffered interface maintains an internal buffer, of type Bigstring. After a successful parse, some of the data in the buffer may be unconsumed. It is the caller's responsibility to ensure parsing continues where it left off, and this is handled by the function passing the relevant sub-buffer each time it is needed. When everything has been consumed, the buffer needs refilling from the network. Unfortunately, the standard library's input function reads data into a Bytes-type buffer and not a Bigstring. To bridge this gap, I split my originally desired 1024-byte buffer into a Bytes and Bigstring of 512 bytes each. input reads into the Bytes, which is then blitted to the Bigstring, which can then be passed to Angstrom for parsing.
 
-The user-level expect function takes an Angstrom parser (usually P.tree) and tries to parse from these internal network-backed buffers. It returns a result value, and is often used in tandem with the high-level XML functions like so:
+The user-level expect function takes an Angstrom parser (usually P.tree) and tries to parse from these internal network-backed buffers. It returns a Result value, and is often used in tandem with the high-level XML functions like so:
 
 expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
 
-The Xmpp module (xmpp.ml)
+The Xmpp module
 This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in [xml], the prefix-namespace pairs used often in XMPP are defined here.
 
 The Roster
