@@ -1,0 +1,588 @@
+% Template for a Computer Science Tripos Part II project dissertation
+\documentclass[12pt,a4paper,twoside,openright]{report}
+\usepackage[pdfborder={0 0 0}]{hyperref}    % turns references into hyperlinks
+\usepackage[margin=25mm]{geometry}  % adjusts page layout
+\usepackage{graphicx}  % allows inclusion of PDF, PNG and JPG images
+\usepackage{verbatim}
+\usepackage{docmute}   % only needed to allow inclusion of proposal.tex
+\usepackage{listings}
+
+\raggedbottom                           % try to avoid widows and orphans
+\sloppy
+\clubpenalty1000%
+\widowpenalty1000%
+
+\renewcommand{\baselinestretch}{1.1}    % adjust line spacing to make
+                                        % more readable
+
+\begin{document}
+
+\bibliographystyle{plain}
+
+\lstset{basicstyle=\ttfamily}
+\newcommand{\code}{\lstinline}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Title
+
+
+\pagestyle{empty}
+
+\rightline{\LARGE \textbf{Joel Jakubovic}}
+
+\vspace*{60mm}
+\begin{center}
+\Huge
+\textbf{An XMPP Server Implementation In OCaml} \\[5mm]
+Computer Science Tripos -- Part II \\[5mm]
+Pembroke College \\[5mm]
+\today  % today's date
+\end{center}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Proforma, table of contents and list of figures
+
+\pagestyle{plain}
+
+\chapter*{Proforma}
+
+{\large
+\begin{tabular}{ll}
+Name:               & \bf Joel Jakubovic                         \\
+College:            & \bf Pembroke  College                      \\
+Project Title:      & \bf An XMPP Server Implementation In OCaml \\
+Examination:        & \bf Computer Science Tripos -- Part II, July 2017  \\
+Word Count:         & \bf About 5000\footnotemark[1]
+                      (well less than the 12000 limit)  \\
+Project Originator: & Dr Anil Madhavapeddy \& Dr Richard Mortier           \\
+Supervisor:         & Richard Mortier                    \\
+\end{tabular}
+}
+\footnotetext[1]{This word count was not yet computed
+by \texttt{detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
+}
+\stepcounter{footnote}
+
+
+\section*{Original Aims of the Project}
+
+To write a demonstration dissertation\footnote{A normal footnote without the
+complication of being in a table.} using \LaTeX\ to save
+student's time when writing their own dissertations. The dissertation
+should illustrate how to use the more common \LaTeX\ constructs. It
+should include pictures and diagrams to show how these can be
+incorporated into the dissertation.  It should contain the entire
+\LaTeX\ source of the dissertation and the makefile.  It should
+explain how to construct an MSDOS disk of the dissertation in
+Postscript format that can be used by the book shop for printing, and,
+finally, it should have the prescribed layout and format of a diploma
+dissertation.
+
+
+\section*{Work Completed}
+
+All that has been completed appears in this dissertation.
+
+\section*{Special Difficulties}
+
+Learning how to incorporate encapulated postscript into a \LaTeX\
+document on both Ubuntu Linux and OS X.
+
+\newpage
+\section*{Declaration}
+
+I, Joel Jakubovic of Pembroke College, being a candidate for Part II of the Computer
+Science Tripos, hereby declare
+that this dissertation and the work described in it are my own work,
+unaided except as may be specified below, and that the dissertation
+does not contain material that has already been used to any substantial
+extent for a comparable purpose.
+
+\bigskip
+\leftline{Signed [signature]}
+
+\medskip
+\leftline{Date [date]}
+
+\tableofcontents
+
+\listoffigures
+
+\newpage
+\section*{Acknowledgements}
+
+This document owes much to an earlier version written by Simon Moore
+\cite{Moore95}.  His help, encouragement and advice was greatly
+appreciated.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% now for the chapters
+
+\pagestyle{headings}
+
+\chapter{Introduction}
+empty
+
+\chapter{Preparation}
+empty
+
+\chapter{Implementation}
+As the objective of this project was to build a server, I developed a server program (\code{server.ml}). I used the Psi client software to help develop the server, but for later testing a more automatable client was needed. For this reason, I also developed a basic XMPP client controller (\code{client.ml}).
+These both make heavy use of the \code{Xml} and \code{Xmpp} modules.
+
+\section{The \code{Xml} module}\label{sec:xmlmod}
+XML is central to XMPP. In my code, it comes in three main forms: as text, as low-level `Raw' XML, and as high-level \code{xml_node}. The \code{Xml} module provides utilities for working with these representations.
+
+First, a note on terminology. XML is a notation for hierarchical trees, and an XML node \footnote{Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'. This case is obviously handled, but does not have any terminological considerations.} has the form
+\begin{lstlisting}[language=xml]
+<prefix:tag pre1:attr1="value1" pre2:attr2="value2" ... pren:attrn="valuen" >
+   ... children ...
+</prefix:tag>
+\end{lstlisting} where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are absent from attributes, but they are used in a couple of important cases outlined below. I call the combination of prefix and identifier a \emph{qualified name}. This way, a node can be seen as
+\begin{lstlisting}[language=xml]
+<qname qname1="value1" qname2="value2" ... qnamen="valuen" >
+  ...
+</qname>
+\end{lstlisting}
+
+Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children. There may be other uses of the \code{xmlns:} prefix, but I considered namespace definition as the only aspect relevant to this project.
+
+Both explicit and default prefixes are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the \code{<body>} element of HTML could be written \code{<html:body>} (as long as the \code{html} prefix referred to the HTML namespace), \code{<body>} (provided HTML was the default namespace), or even \code{<quux:body>} (if \code{quux} referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial \code{<stream>} element needs to use the \code{stream:} prefix. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99\% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
+
+XML-as-text is suitable only for human comprehension; computationally, being a long unstructured block of bytes, it is unsuitable for computer processing. XMPP, though, is built around sending and receiving XML via text, so the ability to parse incoming XML and output XML text was fundamental. The \code{Xml.P} module contains Angstrom parsers for XML syntax, producing a `literal' abstract representation defined in \code{Xml.P.Raw}. Functions for converting this back into text, for output purposes, also live in \code{Xml.P.Raw}.
+
+The main Angstrom parser is \code{tree}, which converts nested opening/closing tags and embedded text into a \code{Raw.Branch} node, or \code{Raw.Text} if the whole thing consists of just text. This suffices for most of XMPP, but there are some situations that do not involve fully completed trees. For example, setting up the client-server XML stream involves only the opening tag of the \code{<stream>} element; likewise, terminating the stream requires the closing tag. Thus, I included \code{tag_open} and \code{tag_close}. In addition, before opening the stream, an XML declaration \code{<?xml version="1.0"?>} is needed, which uses slightly different syntax to XML tags. Since this syntax does not appear anywhere else, I used a custom parser for this purpose.
+
+These parsers are all implemented in terms of smaller named parsers, combined using the Angstrom parser combinators. For example, I defined \code{tag_open} this way:
+
+\begin{lstlisting}[language=ml]
+let tag_open =
+  tok_langle *> qual_name >>= fun (ns,id) ->
+    lift2 (fun attrs _ -> Raw.Branch ((ns,id,attrs),[]))
+      (many attr_val)
+      tok_rangle
+\end{lstlisting}
+
+This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. To elaborate: \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')}, and so on, where \code{lex} skips whitespace.
+
+The parsers written in this manner resemble the Context-Free-Grammars of XML structures, although the choice operator \code{<|>} is an ordered choice. This shows itself in my implementation of \code{tree}:
+
+\begin{lstlisting}[language=ml]
+let tree = fix ( fun t_rec ->
+  ( tok_langle *> qual_name >>= fun (ns,id) ->
+          lift2 (fun attrs children -> Raw.Branch ((ns, id, attrs), children))
+            (many attr_val)
+            (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) )
+  <|> (take_while1 (function | '<' -> false | _ -> true) >>| Raw.text) )
+\end{lstlisting}
+
+As an XML node can be simple text, this is accounted for by assuming text content when an attempt to parse a tag fails.
+
+[more on parsers]
+
+\subsection{The \code{Raw} module}
+As mentioned, the \code{Raw} module contains the `literal' abstract XML representation that these parsers target. Consider
+
+\begin{lstlisting}[language=xml,label={lst:xmlsample}]
+<foo:error type="fatal" xmlns:foo="long-application-namespace" >
+  <a></a>
+  <b></b>
+  Sample text
+</foo:error>
+\end{lstlisting}
+
+The parent node has a qualified tag \code{foo:error}, along with a list of attributes. Each attribute conceptually consists of a prefix, name and value. The prefix might be empty, such as the case of \code{type="fatal"}. The first task of abstract representation is to make all of these explicit, representing attributes as pairs of qualified names and values. \code{type="fatal"} and \code{xmlns:foo="bar"} become the list
+\begin{lstlisting}
+[ (("", "type"), "fatal"); (("xmlns", "foo"), "bar") ]
+\end{lstlisting}
+The above XML source would parse into the following \code{Raw.xml}:
+
+\begin{lstlisting}[language=ml]
+Branch ( ("foo", "error", [
+    (("", "type"), "fatal");
+    (("xmlns", "foo"), "long-application-namespace")
+  ]) , [
+    Branch ( ("", "a", []) , []) ;
+    Branch ( ("", "b", []) , []) ;
+    Text "Sample text" ;
+] )
+\end{lstlisting}
+
+Note the `literal' interpretation of the attribute list as an actual OCaml list. Technically, the order of XML attributes does not matter, but it is simpler to use a list at this level. Also, the special considerations of namespaces and prefixes are not handled at this level; it sees \code{xmlns:foo="bar"} as just another attribute.
+
+The \code{Raw} module provides functions to convert its data structures into strings. The main \code{to_string} function, which recursively serialises an XML tree, is as follows:
+
+\begin{lstlisting}[language={[Objective]Caml}]
+((omitted due to LaTeX upset at the `pipe' character))
+\end{lstlisting}
+
+An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags. [indentation?] [sanitisation?][more on \code{to_string_open}, \code{string_of_qname}, \code{string_of_attrs}]
+
+\subsubsection{Utility constructors}
+Initially, having the \code{Raw} representation and its serialisation functions, I simply used them to generate the server responses. However, many elements needed at least a default namespace, all prefixes needed to be explicitly specified, and the syntax was very heavy to write and read:
+
+\begin{lstlisting}[language=ml]
+respond_tree
+  (X.Xml (("stream","features",[]),[
+    X.Xml (("","mechanisms",[(("","xmlns"),Xmpp.sasl)]),[
+        X.Xml (("","mechanism",[]),[ X.Text "PLAIN" ]);
+        X.Xml (("","required",[]),[])
+      ])
+  ]));
+\end{lstlisting}
+
+After consideration, I reasoned that it would be easier in the long run to add some conveniences for such construction of XML trees in OCaml code. Firstly, I wanted to avoid writing prefixes. The tags mostly use the default (empty) prefix, and the only attribute prefix that is ever used is \code{xmlns:}. By handling namespaces in a more convenient fashion, I could avoid having to specify prefixes for both tags and attributes altogether.
+
+For the purposes of output, I committed to using only one, standard prefix per namespace (recall that prefixes are local to parts of a tree, but such freedom is not really needed here). I bundled namespaces and prefixes together, so that I could refer to them by a simple OCaml identifier. For example, the opening \code{<stream:stream>} element uses the stream prefix, referring to the namespace \code{http://etherx.jabber.org/streams}. I made definitions (in the \code{Xmpp} module) like so:
+
+\begin{lstlisting}[language=ml]
+let jstream  = ("stream","http://etherx.jabber.org/streams")
+let jclient  = ("client","jabber:client")
+let jserver  = ("server","jabber:server")
+\end{lstlisting}
+
+Other namespaces were only ever used with the default (empty) prefix. I did the same with them:
+
+\begin{lstlisting}[language=ml]
+let streams = ("","urn:ietf:params:xml:ns:xmpp-streams")
+let session = ("","urn:ietf:params:xml:ns:xmpp-session")
+let sasl    = ("","urn:ietf:params:xml:ns:xmpp-sasl")
+let bind    = ("","urn:ietf:params:xml:ns:xmpp-bind")
+...
+\end{lstlisting}
+
+I developed convenience functions to construct XML trees using this: \code{xml_d}, \code{xml}, \code{xml_n}, and \code{text}.
+
+For \code{xml_n}, the \code{n} stands for ``no namespace''. This is used for child XML that does not use namespaces at all. For example, the following:
+\begin{lstlisting}
+xml_n "rectangle" [ "width", "240"; "height", "180" ] [
+  text "Sample text"
+]
+\end{lstlisting} constructs the \code{Raw.xml}
+\begin{lstlisting}
+Raw.Xml (("","rectangle",[(("","width"),"240"); (("","height"),"180")]),[
+  Raw.Text "Sample text"
+]
+\end{lstlisting}
+
+\code{xml_d} means `declare'. It is similar to \code{xml_n}, but accepts a prefix-namespace pair. It applies the prefix to the tag and declares the association between prefix and tag in the attributes, automatically. This means that example \ref{lst:xmlsample} could be constructed like so:
+
+\begin{lstlisting}[language=ml]
+module Xmpp = struct
+  ...
+  let foo = ("foo", "long-application-namespace")
+  ...
+end
+
+xml_d Xmpp.foo [ "type", "fatal" ] [
+  xml_n "a" [] [];
+  xml_n "b" [] [];
+  text "Sample text"
+]
+\end{lstlisting}
+
+Finally, \code{xml} is a somewhat idiosyncratic variant that exists for child XML that can use a prefix, but does not declare it. [made sense at the time ... rather obscure motivation. probably worth leaving out --- though it \emph{is} used in code samples!]
+
+The advantages of this notation are clear: high signal-to-noise ratio\footnote{OCaml's data constructors are not curried, requiring parentheses, whereas function application does not require them. Also, in some situations, such as lists, it is legal to drop parentheses in pairs: \code{[ (x,y); (z,w) ]} becomes \code{[ x,y; z,w ]}.}, and the use of functions allows automatic handling of namespaces. The end result is that the code finally looks somewhat like the thing it represents.
+
+\subsection{High-level \code{xml_node}}
+The higher-level representation, \code{xml_node}, exists for situations where \code{Raw}'s data structures become unwieldy. It is defined as follows:
+
+\begin{lstlisting}[language={[Objective]Caml}]
+<omitted>
+\end{lstlisting}
+
+The main improvement is the use of an opaque attribute lookup function, rather than an explicit data structure. \code{attr_full} takes a qualified name, but since most attributes do not have a namespace prefix, the more convenient attr is also provided. \code{attr} is implemented as calling \code{attr_full} with an empty namespace prefix.
+
+One consideration with namespaces is that prefix-namespace mappings are inherited to child nodes of their declaration site. \code{xml_node} incorporates this functionality into the namespace function. It finds the namespace associated with a prefix, delegating to the parent node if unsuccessful. [expand on how exactly I accomplished this]
+
+\code{attr}, \code{attr_full} and namespace all internally use the standard library's \code{Map} structure, being more appropriate for lookup than lists; lists require a linear scan to locate a mapping, and a full scan of the list to determine its absence, whereas \code{Map} provides logarithmic-time lookup.
+
+An \code{xml_node} is constructed from an original \code{Raw.xml} structure, and it is useful to keep this information for output purposes. It is stored in the \code{orig} field.
+
+The language of any text content is, like namespaces, an inherited special attribute, and is signified by \code{xml:lang} in the attribute list. It is stored in the \code{lang} field of the branch, and propagated to leaf \code{Text} nodes. This is because a \code{Text} instance, in isolation, does not have a reference to its parent, and hence must have its own \code{lang} attribute.
+
+The construction of an \code{xml_node} from \code{Raw.xml} is accomplished by the \code{from_raw_br} function. [how much detail to go into on this?]
+
+\subsubsection{Semantic checking and matching} \label{sec:matchers}
+The text-to-\code{Raw} parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of ``pattern matching'' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep anyway; perhaps I should prioritise this reason], so I went down the route of parsers and combinators modelled after Angstrom.
+
+Unlike Angstrom's parsers, which are designed to be fairly orthogonal fundamental building blocks of more complex parsers, mine are deliberately special-purpose. I went with whatever would be useful to write readable code, without necessarily being exhaustive in the range of behaviours achievable by combining them.
+
+I viewed a `matcher' as a function accepting an \code{xml_node} and returning a \code{Result} value. Composition of matchers was then to involve both composition of functions, and composition of \code{Result} values\footnote{The resulting library could be seen as a fusion of the Function and \code{Result} monads.}. Application of a matcher to an \code{xml_node} is simple function application.
+
+The matchers live in the \code{Xml.Check} module. The main ones are \code{tag} / \code{qtag}, \code{attr} / \code{attr_opt}, \code{attv}, \code{child} / \code{children}, \code{orig} and \code{text}.
+
+\begin{itemize}
+  \item \code{tag "message"} succeeds if the node has the \code{message} tag
+
+  \item \code{qtag} functions like \code{tag}, but takes a namespace prefix to also check
+
+  \item \code{attr "id"} results in the value of the \code{id} attribute if it exists
+
+  \item \code{attv "id" "1234"} succeeds if the \code{id} attribute exists and is equal to 1234
+
+  \item \code{attr_opt} is like \code{attr} but does not fail, instead resulting in \code{Some <value>} or \code{None}
+
+  \item \code{child} gives the first child of the node if it exists
+
+  \item \code{children} gives a list of the node's children (possibly the empty list, so this one also never fails)
+
+  \item \code{orig} results in the low-level \code{Raw} representation from which the \code{xml_node} was obtained
+
+  \item \code{text} gives the text string of a \code{Text} node
+\end{itemize}
+
+I avoid using the word `return' here, as strictly what these functions return is a \code{Result}, possibly containing the `resulting' value --- or an error. For those that merely check some condition rather than retrieve a value (\code{tag}/\code{qtag} and \code{attv}), I say they `succeed' instead\footnote{This could mean `resulting' in the value \code{()}, but I actually found it more useful to `result' in the \code{xml_node} passed in.}.
+
+\subsubsection{Matcher combinators}
+The combinators let me write XML matching code resembling, as closely as possible in OCaml\footnote{Short of syntax extensions perhaps, which I am unfamiliar with}, the XML itself:
+
+\begin{lstlisting}
+tag "iq" *> attv "type" "get" *> attr "id" >>= fun id ->
+  (* id is now bound to the "id" attribute *)
+  ...
+\end{lstlisting}
+
+This would succeed on the XML node
+\begin{lstlisting}[language=xml]
+<foo:iq type="get" id="123" > ... </foo:iq>.
+\end{lstlisting}
+
+I implemented the usual \code{>>=} for `bind', \code{*>} for `sequence', \code{<|>} for `alternative' and the direction-reversed versions where needed.
+
+\begin{itemize}
+  \item \code{(f >>= fun x -> g) xml} first performs \code{f xml}; if successful, it binds the result value to \code{x} and returns \code{g xml}. Otherwise, if \code{f xml} fails, it aborts with the error value.
+
+  \item \code{(f *> g) xml} is like \code{>>=} but discards the result, binding no values. In this sense, it sequences a `check' with a check or match, although this is a conceptual distinction that is not enforced in the code.
+
+  \item \code{(f <|> g) xml} is like \code{*>}, but with opposite error behaviour: when \code{f xml} fails, \code{g xml} is tried.
+\end{itemize}
+
+The matcher implementations are all fairly straightforward and similar to each other. For instance, \code{attr}:
+
+\begin{lstlisting}
+<omitted>
+\end{lstlisting}
+
+Out of the above matchers, only \code{text} makes sense for text nodes. Because both the low- and high-level XML types incorporate the possibility of text, all matchers except \code{text} have to account for this case at runtime.
+
+\subsubsection{The question of buffering}
+Angstrom provides the \code{parse_only} function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's \code{parse} function produces a state that can be progressively fed input until it finishes.
+
+From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server and client code (such as the initial handshake). Functions for responding to the client were simple, generally consisting of output to a channel plus a flush of the channel. The `expect' function, though, was more involved.
+
+Angstrom's \code{Buffered} interface maintains an internal buffer, of type \code{Bigstring}. After a successful parse, some of the data in the buffer may be unconsumed. It is the caller's responsibility to ensure parsing continues where it left off, and this is handled by the function passing the relevant sub-buffer each time it is needed. When everything has been consumed, the buffer needs refilling from the network. Unfortunately, the standard library's \code{input} function reads data into a \code{Bytes}-type buffer and not a \code{Bigstring}. To bridge this gap, I split my originally desired 1024-byte buffer into a \code{Bytes} and \code{Bigstring} of 512 bytes each. \code{input} reads into the \code{Bytes}, which is then blitted to the \code{Bigstring}, which can then be passed to Angstrom for parsing.
+
+The user-level \code{expect} function takes an Angstrom parser (usually \code{P.tree}) and tries to parse from these internal network-backed buffers. It returns a \code{Result} value, and is often used in tandem with the high-level XML functions like so:
+
+\begin{lstlisting}[language=ml]
+expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
+\end{lstlisting}
+
+\section{The \code{Xmpp} module}
+This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in \ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
+
+\subsection{The Roster}
+`Roster' is simply XMPP jargon for what is functionally a contact list. [perhaps much of the rationale in this section should go in preparation.]
+
+The username \code{alice} has a roster file located in the \code{roster/} directory called \code{alice.xml}. It consists of a list of XMPP roster \code{<item>} elements. Each item describes another user, and the subscription status between the two users.
+
+The concept of subscription has design ramifications worth discussing. The word is used in its usual sense: if user A is subscribed to user B, then A will receive updates about B's presence on the network. This is a \emph{directed} relation; B might not be subscribed to A. Thus, conceptually, subscription is a directed graph that needs to be stored on disk as well as in memory. There is, then, a choice of how to represent this graph.
+
+The two main options for graph representation are \emph{adjacency list} and \emph{adjacency matrix}.
+
+An adjacency matrix, being a 2D structure, would have forced me to think about implementation in terms of nested 1D maps or arrays, and how to avoid loading the entire graph at once; thus also how to split it into separate files or regions of a file, and so on.
+
+So, overall, I leaned towards the adjacency list. I felt it would be easier to implement given that it already matched up to the way XMPP treats the subscription relation. I could have a separate file for each `vertex' of this graph, in a format resembling a list of \code{<item>}s, and similar separate in-memory data structures, making loading and lookup simple to think about. [time constraints too?]
+
+The subscribers of user A are recorded in the XMPP \code{<item>} elements as \code{from}, \code{to}, or \code{both}. RFC 6121 defines \code{to} as A having a subscription to the user in the \code{<item>} element; \code{from} is the converse, and \code{both} simply means A and B are mutually subscribed.
+
+Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
+
+[but --- no need to enforce, since I abandoned CRUD operations and can trust my own files to be consistent]
+
+There is conceptually a mapping from user to their roster. I found it useful to view a user's roster as another mapping, from a contact's JID to their \code{<item>} record. The user-roster association is a global \code{Map} data structure, and the roster itself is another \code{Map}.
+
+I represented \code{<item>} records, in-memory, as follows:
+
+\begin{lstlisting}[language=ml]
+<omitted: error is always ``read \egroup''
+\end{lstlisting}
+
+This is almost a direct XML-to-OCaml translation of XMPP's \code{<item>} element, the main difference being my treatment of the \code{subscription} attribute. I felt that the \code{subscription} attribute as \code{none}, \code{from}, \code{to} or \code{both} was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: \code{recv_ok} (activated by \code{to} and \code{both}) and \code{send_ok} (activated by \code{from} and \code{both}). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via \code{send_ok}, rather than mentally decrypting `to' or `from'. [as for groups, I had to abandon them because of time]
+
+Rosters are managed through the \code{Roster} sub-module. After authenticating a client, the server calls \code{Roster.load_from_storage} with their username, to ensure that their contact information is available.
+
+\code{Roster.load_from_storage} uses Angstrom parsers and the high-level \code{xml_node} interface to load the roster file into memory. The only part of this that is slightly interesting is \code{item_of_xml}, which constructs an item record from what should be an \code{<item>} XML node:
+
+\begin{lstlisting}[language=ml]
+<omitted>
+\end{lstlisting}
+
+This demonstrates the utility of the \code{xml_node} matchers discussed in \ref{sec:matchers}. This function treats the absence of a \code{subscription} attribute as equivalent to \code{subscription="none"} (hence the use of \code{attr_opt}). \code{groups} is set to an empty value for the aforementioned reasons. There is also a corresponding \code{to_xml} function acting on \code{item} structures.
+
+[abandonment of CRUD, view towards testing]
+
+\subsection{The \code{Stanza} module}
+Outline:
+
+\begin{itemize}
+  \item Meant to bring stanza formats into the type level
+
+  \item \code{Iq} sub-module has \code{Iq.t} (record with request ID and further data dependent on the \code{type} attribute) and \code{Iq.of_xml}
+
+  \item Did not extend with \code{Message} / \code{Presence} sub-modules since they are not as general or varied as \code{Iq}; managed fine without type-level message or presence stanzas
+\end{itemize}
+
+\section{The server program}
+\subsection{Work-dispatching machinery (the \code{Dispatch} module)}
+On the server, per client, post-handshake; outline:
+
+\begin{itemize}
+  \item Sets up worker thread to forward stanzas to the client. Obtains stanzas via \code{dequeue_work} on work queue created by \code{client_connected}.
+
+  \item Main thread reacts to messages arriving, forwards to appropriate worker thread by means of \code{dispatch <jid> <stanza>}
+
+  \item Global \code{jid -> work-queue} map, protected by mutex
+
+  \item Each work-queue has a \code{Queue} data structure and a \code{Condition} (`monitor' pattern) for `work available' plus its associated mutex. Also a `finished' boolean so worker thread can finish and quit gracefully.
+
+  \item \code{dispatch} pushes the work to the appropriate queue, signalling `available'
+
+  \item \code{dequeue_work} blocks waiting on `available'; if the `finished' flag is set, produces \code{None} after queue empties, signalling to the worker thread to exit. Otherwise, produces \code{Some <work>}
+
+  \item \code{client_disconnected} sets the `finished' flag and signals, then removes client from the global map.
+\end{itemize}
+
+\subsection{Server operation}
+The server program uses a simple `driver' to spawn off a thread each time a client connects. The function \code{sv_start ()} simply performs \code{Driver.establish_server} on the local loopback address, passing in the function \code{per_client}.
+
+[soon-to-be obsolete paragraph]
+\code{Driver.establish_server} is an adapted version of \code{Unix.establish_server} from the standard library. The Unix version spawns off a separate process to handle each client connection, which was revealed as deeply problematic during testing. I took the implementation of \code{Unix.establish_server} and rewrote the process-spawning code with thread-spawning code.
+
+When \code{Driver.establish_server} accepts a client connection, it opens a read and a write channel and passes them to \code{per_client}, invoked on a new thread. The XMPP protocol then follows in two broad stages, setup and service. Setup involves handshaking with the client, performing authentication and resource binding, and the initial presence. Service consists of responding to client requests and delivering messages to the client.
+
+All of these stages make use of the \code{Result} monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
+
+\subsubsection{Setup stage}
+After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the \code{<stream>} opening element from the client (after an XML declaration), and responds with its own. It looks like this:
+
+\begin{lstlisting}[language=ml]
+let stream_handshake id =
+  expect A.(P.xml_decl *> P.tag_open) >>| Xml.from_raw >>=
+    Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
+  let response = Raw.(to_string_open (xml_d Xmpp.jstream "stream" [
+    "xmlns", snd Xmpp.jclient;
+    "version", "1.0"; "from", my_addr; "id", id;
+  ] []))
+  in respond response; Ok (my_addr, id)
+\end{lstlisting}
+
+This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag and relevant data extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use. The function returns the information obtained: the stream ID and the server's Web address (\code{ptii.proj} is used throughout this project).
+
+Further outline:
+
+\begin{itemize}
+  \item Offers the list of stream features to negotiate. Sole element is the required authentication mechanism; server offers \code{PLAIN} auth only
+
+  \item After client chooses \code{PLAIN}, extracts login information from \code{base64}-encoded text with a special Angstrom parser. Responds with `success' to client. Obvious extension point for user accounts, encryption, proper authentication etc.
+
+  \item Now username has been obtained, loads client's roster into memory, if it exists.
+
+  \item Restarts the stream by handshaking again as per XMPP spec. Offers features again, this time consisting of the required process to bind a resource. Accomplished via \code{<iq>} stanzas, using the \code{Stanza.Iq} helpers. Returns client's full JID incorporating their username, server address and resource.
+
+  \item Expects an \code{<iq>} `set' session request, to formally establish the session, responds with empty \code{<iq>} signalling success. Optional behaviour according to the spec, but implemented as Psi performs this step.
+
+  \item Expects initial request for roster, responds with whatever roster data is specified in the \code{roster/} directory. If none, responds with empty roster, even though this is treated specially for testing as a universal subscription, to / from everyone.
+
+  \item Expects initial presence, followed by echoing back to the client and forwarding to its subscribers. If universally subscribed, obtains list of currently online clients from the \code{Dispatch} module, filtering out this client from the list before forwarding.
+
+  Setup is finished, now moves into servicing incoming stanzas.
+\end{itemize}
+
+\subsubsection{Service stage}
+Outline:
+
+\begin{itemize}
+  \item Calls \code{Dispatch.client_connected} to obtain work queue. Sets up worker thread, which loops extracting from the queue and forwarding the stanzas to the client. Watches for a \code{time} attribute on \code{<message>}s; if found, prints out system time via \code{Unix.gettimeofday ()}. Not part of XMPP spec; used for timing during test/eval.
+
+  \item Next, enters loop expecting stanzas and behaving accordingly. Main behaviour separated into \code{handle_iq}, \code{handle_presence}, \code{handle_message}. Auxiliary behaviour such as parsing the stanzas and handling errors lives in the loop body.
+
+  \item \code{handle_iq} returns an \code{Iq.t} representing the stanza error feature-not-implemented. Calling code translates this into the actual XML and responds.
+
+  \item \code{handle_presence} watches for the final \code{<presence type="unavailable" />} that signifies the client's wish to disconnect, returning a value that the calling code uses to end the loop.
+
+  \item \code{handle_message} ensures \code{<message>} elements have a valid source and destination, returning the message and the recipient to deliver it to. The calling code then uses \code{Dispatch.dispatch} to send it on its way.
+
+  \item Once the loop finished, \code{Dispatch.client_disconnected} is called to cut off the stream of stanzas into the worker thread. The main thread then waits for the worker to process what remains in its queue before terminating. Finally, the closing \code{</stream:stream>} is sent and the socket is closed as \code{per_client} finishes. This stage can actually be reached prematurely if stream errors occur during setup or service, and if so the error is returned and printed out.
+\end{itemize}
+
+\section{The \code{Client} module}
+Outline:
+
+\begin{itemize}
+  \item Object rationale; easier to have each client with its own state (sockets, buffers) and command via \code{client1#handshake} etc, especially in toplevel for experimentation.
+
+  \item Handshake designed to be symmetric to server's and ensure it all goes smoothly. Not designed to anticipate variation from the server; purely for testing. Uses dummy password.
+
+  \item Constructor client connects and stores username for later.
+
+  \item \code{#handshake} method performs handshake, returns roster.
+
+  \item \code{#message "recpt" body} sends the body XML via a \code{<message>} to \code{recpt@ptii.proj}. Takes optional \code{time} boolean flag, to order the server to display the time at the point of forwarding to recipient.
+
+  \item \code{#message_t "recpt" text} is a more user-friendly version where the body consists of just text.
+
+  \item \code{#disconnect} sends \code{<presence type="unavailable" >} and closing \code{</stream:stream>}.
+
+  \item \code{#spill} extracts one XML element / tree from client's receive buffer, and returns it.
+
+  \item Testing utility function \code{with_client}. Spawns \emph{transcriber} thread and \emph{action} thread. Action thread executes a user-defined function, usually involving sending messages. Transcriber repeatedly calls \code{#spill} on the client and logs the received XML in \code{transcripts/<clientname>.xml}. On error, transcriber sets boolean `finished' flag that action thread should use to abort early, and quits. Action thread can set `finished' at the end of its life to cause the transcriber to quit, if desired. \code{with_client} returns the action thread.
+\end{itemize}
+
+\chapter{Evaluation}
+All is outline:
+
+\section{Handshake; connect / disconnect}
+Show a session with Psi. Show results of simple multi-client messaging scenario (see round-robin under \ref{sec:messaging})
+
+\section{Presence notifications}
+These happen as clients connect and disconnect. I am not sure if it will be worth performance-testing this; I may just make sure this works as intended, by ensuring the flow of presence conforms to rosters when they are available.
+
+Have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Have a nontrivial subscription graph demonstrating \code{from}, \code{to}, \code{both}. Show that all 6 orders of connection (disconnect in reverse order for simplicity) produce the correct presence-notification patterns in accordance with the rosters.
+
+\section{Roster management}
+This intersects with presence notifications; the only other thing to do here is check that it gives the correct response to the clients' initial get-roster requests. The lack of CRUD operations means there is little else to do.
+
+\section{Messaging between clients}
+I identified five main dimensions to parameterise messaging: Topology (who sends to whom; number and character of graph edges), Send Rate (how fast clients generate and send new messages), the number of messages each client sends, the number of clients (number of graph vertices) and the complexity of message bodies.
+
+Topology is far too variable to explore thoroughly; instead, I consider the following to be `interesting':
+
+\begin{itemize}
+  \item Round-robin, for simplicity. Possibly too uninteresting or limited for serious timing, but serves to check if the server actually works. Client $i$ sends to client $i+1$, with wraparound for the last client.
+
+  \item Random: Each client picks a uniformly random recipient (excluding itself) for each message. `Surely', if averaged over (3? 5?) sample runs, it will be a good measure of throughput?
+
+  \item Complete: Everyone sends each message to everyone else.
+\end{itemize}
+
+For performance testing and timing, I think I will go for Random topology; Complete might be useful when looking for a breaking point.
+
+Number of clients is easy to vary, but I wonder if this could cause my client programs to break before the server does. Still, one graph: All other things fixed, number of clients vs. average throughput.
+
+Throughput estimated by taking reference time, proceeding with the messages and activity and then taking a final time measurement; divide delta by number of messages.
+
+Easiest if all clients connect first, then messaging proceeds, then all disconnect.
+
+Send rate: ``as fast as they can''. Nontrivial to ensure clients send at a particular rate per second; plus, this would really invalidate my primitive timing strategy as it would incorporate `too much' of the time clients don't spend doing anything. At least when ``as fast as possible'', this effect is minimised.
+
+Number of messages (per client): Don't see the point in systematically varying it; high enough to be meaningful, low enough for the test not to take forever.
+
+Complexity of message bodies: Unsure. Not as relevant as other concerns, since most XMPP messages won't consist of heavily nested XML. Keep as a constant `lorem ipsum' type paragraph.
+
+\chapter{Conclusion}
+
+\end{document}

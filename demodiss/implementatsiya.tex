@@ -19,9 +19,9 @@ First, a note on terminology. XML is a notation for hierarchical trees, and an X
 
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children. There may be other uses of the \code{xmlns:} prefix, but I considered namespace definition as the only aspect relevant to this project.
 
-Both explicit and default prefixes are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the \code{<body>} element of HTML could be written \code{<html:body>} (as long as the \code{html} prefix referred to the HTML namespace), \code{<body>} (provided HTML was the default namespace), or even \code{<quux:body>} (if quux referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial \code{<stream>} element needs to use the \code{stream:} prefix. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99\% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
+Both explicit and default prefixes are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the \code{<body>} element of HTML could be written \code{<html:body>} (as long as the \code{html} prefix referred to the HTML namespace), \code{<body>} (provided HTML was the default namespace), or even \code{<quux:body>} (if \code{quux} referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial \code{<stream>} element needs to use the \code{stream:} prefix. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99\% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
 
-XML-as-text is suitable only for human comprehension; computationally, being a long unstructured block of bytes, it is unsuitable for computer processing. XMPP, though, is built around sending and receiving XML via text, so the ability to parse incoming XML and output XML text was fundamental. The Xml.P module contains Angstrom parsers for XML syntax, producing a `literal' abstract representation defined in \code{Xml.P.Raw}. Functions for converting this back into text, for output purposes, also live in \code{Xml.P.Raw}.
+XML-as-text is suitable only for human comprehension; computationally, being a long unstructured block of bytes, it is unsuitable for computer processing. XMPP, though, is built around sending and receiving XML via text, so the ability to parse incoming XML and output XML text was fundamental. The \code{Xml.P} module contains Angstrom parsers for XML syntax, producing a `literal' abstract representation defined in \code{Xml.P.Raw}. Functions for converting this back into text, for output purposes, also live in \code{Xml.P.Raw}.
 
 The main Angstrom parser is \code{tree}, which converts nested opening/closing tags and embedded text into a \code{Raw.Branch} node, or \code{Raw.Text} if the whole thing consists of just text. This suffices for most of XMPP, but there are some situations that do not involve fully completed trees. For example, setting up the client-server XML stream involves only the opening tag of the \code{<stream>} element; likewise, terminating the stream requires the closing tag. Thus, I included \code{tag_open} and \code{tag_close}. In addition, before opening the stream, an XML declaration \code{<?xml version="1.0"?>} is needed, which uses slightly different syntax to XML tags. Since this syntax does not appear anywhere else, I used a custom parser for this purpose.
 
@@ -35,7 +35,7 @@ let tag_open =
       tok_rangle
 \end{lstlisting}
 
-This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. To elaborate: \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')|, and so on, where \code{lex} skips whitespace.
+This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. To elaborate: \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')}, and so on, where \code{lex} skips whitespace.
 
 The parsers written in this manner resemble the Context-Free-Grammars of XML structures, although the choice operator \code{<|>} is an ordered choice. This shows itself in my implementation of \code{tree}:
 
@@ -94,7 +94,7 @@ let rec to_string = function
             to_string_open xml ^ interior ^ to_string_close xml
 \end{lstlisting}
 
-An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags. [indentation?] [sanitisation?][more on to_string_open, string_of_qname, string_of_attrs]
+An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags. [indentation?] [sanitisation?][more on \code{to_string_open}, \code{string_of_qname}, \code{string_of_attrs}]
 
 \subsubsection{Utility constructors}
 Initially, having the \code{Raw} representation and its serialisation functions, I simply used them to generate the server responses. However, many elements needed at least a default namespace, all prefixes needed to be explicitly specified, and the syntax was very heavy to write and read:
@@ -164,7 +164,7 @@ Finally, \code{xml} is a somewhat idiosyncratic variant that exists for child XM
 The advantages of this notation are clear: high signal-to-noise ratio\footnote{OCaml's data constructors are not curried, requiring parentheses, whereas function application does not require them. Also, in some situations, such as lists, it is legal to drop parentheses in pairs: \code{[ (x,y); (z,w) ]} becomes \code{[ x,y; z,w ]}.}, and the use of functions allows automatic handling of namespaces. The end result is that the code finally looks somewhat like the thing it represents.
 
 \subsection{High-level \code{xml_node}}
-The higher-level representation, xml_node, exists for situations where \code{Raw}'s data structures become unwieldy. It is defined as follows:
+The higher-level representation, \code{xml_node}, exists for situations where \code{Raw}'s data structures become unwieldy. It is defined as follows:
 
 \begin{lstlisting}[lanuage=ml]
 type xml_node =
@@ -182,7 +182,7 @@ type xml_node =
 
 The main improvement is the use of an opaque attribute lookup function, rather than an explicit data structure. \code{attr_full} takes a qualified name, but since most attributes do not have a namespace prefix, the more convenient attr is also provided. \code{attr} is implemented as calling \code{attr_full} with an empty namespace prefix.
 
-One consideration with namespaces is that prefix-namespace mappings are inherited to child nodes of their declaration site. \code{xml_node} incorporates this functionality into the namespace function. It finds the namespace associated with a prefix, delegating to the parent node if unsuccessful. [expand on how exaclty I accomplished this]
+One consideration with namespaces is that prefix-namespace mappings are inherited to child nodes of their declaration site. \code{xml_node} incorporates this functionality into the namespace function. It finds the namespace associated with a prefix, delegating to the parent node if unsuccessful. [expand on how exactly I accomplished this]
 
 \code{attr}, \code{attr_full} and namespace all internally use the standard library's \code{Map} structure, being more appropriate for lookup than lists; lists require a linear scan to locate a mapping, and a full scan of the list to determine its absence, whereas \code{Map} provides logarithmic-time lookup.
 
@@ -197,7 +197,7 @@ The text-to-\code{Raw} parsers solve the problem of structuring XML and detectin
 
 Unlike Angstrom's parsers, which are designed to be fairly orthogonal fundamental building blocks of more complex parsers, mine are deliberately special-purpose. I went with whatever would be useful to write readable code, without necessarily being exhaustive in the range of behaviours achievable by combining them.
 
-I viewed a `matcher' as a function accepting an \code{xml_node} and returning a \code{Result} value. Composition of matchers was then to involve both composition of functions, and composition of \code{Result} values. \footnote{The resulting library could be seen as a fusion of the Function and \code{Result} monads. Application of a matcher to an \code{xml_node} is simple function application.
+I viewed a `matcher' as a function accepting an \code{xml_node} and returning a \code{Result} value. Composition of matchers was then to involve both composition of functions, and composition of \code{Result} values\footnote{The resulting library could be seen as a fusion of the Function and \code{Result} monads.}. Application of a matcher to an \code{xml_node} is simple function application.
 
 The matchers live in the \code{Xml.Check} module. The main ones are \code{tag} / \code{qtag}, \code{attr} / \code{attr_opt}, \code{attv}, \code{child} / \code{children}, \code{orig} and \code{text}.
 
@@ -308,7 +308,7 @@ I represented \code{<item>} records, in-memory, as follows:
   }
 \end{lstlisting}
 
-This is almost a direct XML-to-OCaml translation of XMPP's \code{<item>} element, the main difference being my treatment of the \code{subscription} attribute. I felt that the \code{subscription} attribute as \code{none}, \code{from}, \code{to} or \code{both} was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: \code{recv_ok} (activated by \code{to} and ]code{both}) and \code{send_ok} (activated by \code{from} and \code{both}). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via \code{send_ok}, rather than mentally decrypting `to' or `from'. [as for groups, I had to abandon them because of time]
+This is almost a direct XML-to-OCaml translation of XMPP's \code{<item>} element, the main difference being my treatment of the \code{subscription} attribute. I felt that the \code{subscription} attribute as \code{none}, \code{from}, \code{to} or \code{both} was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: \code{recv_ok} (activated by \code{to} and \code{both}) and \code{send_ok} (activated by \code{from} and \code{both}). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via \code{send_ok}, rather than mentally decrypting `to' or `from'. [as for groups, I had to abandon them because of time]
 
 Rosters are managed through the \code{Roster} sub-module. After authenticating a client, the server calls \code{Roster.load_from_storage} with their username, to ensure that their contact information is available.
 
@@ -352,7 +352,7 @@ On the server, per client, post-handshake; outline:
 \begin{itemize}
   \item Sets up worker thread to forward stanzas to the client. Obtains stanzas via \code{dequeue_work} on work queue created by \code{client_connected}.
 
-  \item Main thread reacts to messages arriving, forwards to appropriate worker thread by means of \code{dispatch <jid> <stanza>|
+  \item Main thread reacts to messages arriving, forwards to appropriate worker thread by means of \code{dispatch <jid> <stanza>}
 
   \item Global \code{jid -> work-queue} map, protected by mutex
 
