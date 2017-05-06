@@ -33,7 +33,7 @@ module Dispatch = struct
     let fin = ref false in
     Mutex.lock qs_lock;
       queues := M.add name (q,q_mon,avail,fin) !queues;
-      let l = M.bindings !queues in
+      (* let l = M.bindings !queues in *)
     Mutex.unlock qs_lock;
     (*display (fun _ ->
       print_endline (fmt "Client connected: %s; %d connected clients:" name (List.length l));
@@ -131,6 +131,9 @@ let plain_auth_extract str =
 
 let orig_utime = ref 0.0
 let orig_stime = ref 0.0
+
+let last_utime = ref 0.0
+let last_stime = ref 0.0
 
 let sv_start () =
   let per_client from_ie to_ie =
@@ -247,7 +250,11 @@ let sv_start () =
               let ut = ut -. !orig_utime in
               let st = st -. !orig_stime in
               print_endline ("TIME (U): " ^ (string_of_float ut));
-              print_endline ("TIME (S): " ^ (string_of_float st)))
+              print_endline ("TIME (S): " ^ (string_of_float st));
+              print_endline ("DeltaU: " ^ (string_of_float (ut -. !last_utime)));
+              print_endline ("DeltaS: " ^ (string_of_float (st -. !last_stime)));
+              last_utime := ut; last_stime := st
+            )
             | _ -> ())
           | None -> finish := true
         done

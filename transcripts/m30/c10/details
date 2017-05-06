@@ -1,0 +1,16 @@
+TIME (U): 8.48876690865
+TIME (S): 0.012072
+TIME (U): 8.51356196404
+TIME (S): 0.035362
+
+DeltaU: 8.51356196404 - 8.48876690865 = 0.02479505539
+DeltaS: 0.035362 - 0.012072 = 0.02329
+
+Client disconnected: 0@ptii.proj
+Client disconnected: 5@ptii.projClient disconnected: 1@ptii.proj
+
+Client disconnected: 2@ptii.proj
+Client disconnected: 9@ptii.proj
+Client disconnected: 4@ptii.proj
+Client disconnected: 6@ptii.projClient disconnected: 7@ptii.projClient disconnected: 3@ptii.proj
+Client disconnected: 8@ptii.proj
