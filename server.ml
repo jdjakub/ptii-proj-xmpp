@@ -129,7 +129,8 @@ let plain_auth_extract str =
     (nul *> take_till (fun _ -> false))
   in parse_only p (`String str)
 
-let orig_time = ref 0.0
+let orig_utime = ref 0.0
+let orig_stime = ref 0.0
 
 let sv_start () =
   let per_client from_ie to_ie =
@@ -240,9 +241,13 @@ let sv_start () =
               respond_tree xml;
             Mutex.unlock stream_lock;
             (match xml with
-            | Raw.Branch ((_,_,_::((_, "time"), _ )::_),_) ->
-              let t = Unix.gettimeofday () -. !orig_time in
-              print_endline ("TIME IS: " ^ (string_of_float t))
+            | Raw.Branch ((_,_,_::((_, "time"), _ )::_),_) -> (
+              let ut = Unix.gettimeofday () in
+              let st = Sys.time () in
+              let ut = ut -. !orig_utime in
+              let st = st -. !orig_stime in
+              print_endline ("TIME (U): " ^ (string_of_float ut));
+              print_endline ("TIME (S): " ^ (string_of_float st)))
             | _ -> ())
           | None -> finish := true
         done
@@ -310,12 +315,13 @@ let sv_start () =
       Thread.join worker;
       !res
     ) |> function
-    | Ok _ -> (*print_endline "[SUCCESS]"*); Ok () (* respond "</stream:stream>" *)
+    | Ok _ -> (*print_endline "[SUCCESS]";*) Ok () (* respond "</stream:stream>" *)
     | Error err -> respond "</stream:stream>"; Error err
 
   in
   Driver.(establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)))
 
 let () =
-  orig_time := Unix.gettimeofday ();
+  orig_utime := Unix.gettimeofday ();
+  orig_stime := Sys.time ();
   sv_start ()
