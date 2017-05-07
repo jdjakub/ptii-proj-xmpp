@@ -448,5 +448,5 @@ Outline:
 
   \item \code{#spill} extracts one XML element / tree from client's receive buffer, and returns it.
 
-  \item Testing utility function \code{with_client}. Spawns \emph{transcriber} thread and \emph{action} thread. Action thread executes a user-defined function, usually involving sending messages. Transcriber repeatedly calls \code{#spill} on the client and logs the received XML in \code{transcripts/<clientname>.xml}. On error, transcriber sets boolean `finished' flag that action thread should use to abort early, and quits. Action thread can set `finished' at the end of its life to cause the transcriber to quit, if desired. \code{with_client} returns the action thread.
+  \item Testing utility function \code{begin_transcription}. Spawns \emph{transcriber} thread, which repeatedly calls \code{#spill} on the client and logs the received XML in \code{<clientname>.xml} somewhere in the \code{transcripts/} directory tree. On error, transcriber sets boolean `finished' flag that user should use to abort early, and quits. User can set `finished' to cause the transcriber to quit, if desired. \code{with_client} returns the action thread.
 \end{itemize}
