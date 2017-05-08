@@ -129,11 +129,20 @@ let plain_auth_extract str =
     (nul *> take_till (fun _ -> false))
   in parse_only p (`String str)
 
-let orig_utime = ref 0.0
-let orig_stime = ref 0.0
-
-let last_utime = ref 0.0
-let last_stime = ref 0.0
+let orig_lock = Mutex.create ()
+let t_orig = ref None
+let n_msgs = ref 0
+let m_lock = Mutex.create ()
+let inc_count t =
+  Mutex.lock m_lock;
+    incr n_msgs;
+    (if !n_msgs mod 50 = 0 then
+      match !t_orig with
+      | None -> print_endline (format "DISPATCHED %d msgs: (du,ds)=???" !n_msgs)
+      | Some (u0,s0) -> let (u,s) = t in
+        print_endline (format "DISPATCHED %d msgs: (du,ds)=(%f,%f)" !n_msgs (u -. u0) (s -. s0))
+    else () );
+  Mutex.unlock m_lock
 
 let sv_start () =
   let per_client from_ie to_ie =
@@ -239,23 +248,12 @@ let sv_start () =
         let finish = ref false in
         while !finish = false do
           match Dispatch.dequeue_work workq with
-          | Some xml ->
+          | Some xml -> (
             Mutex.lock stream_lock;
               respond_tree xml;
             Mutex.unlock stream_lock;
-            (match xml with
-            | Raw.Branch ((_,_,_::((_, "time"), _ )::_),_) -> (
-              let ut = Unix.gettimeofday () in
-              let st = Sys.time () in
-              let ut = ut -. !orig_utime in
-              let st = st -. !orig_stime in
-              print_endline ("TIME (U): " ^ (string_of_float ut));
-              print_endline ("TIME (S): " ^ (string_of_float st));
-              print_endline ("DeltaU: " ^ (string_of_float (ut -. !last_utime)));
-              print_endline ("DeltaS: " ^ (string_of_float (st -. !last_stime)));
-              last_utime := ut; last_stime := st
-            )
-            | _ -> ())
+            inc_count (Unix.gettimeofday (), Sys.time ())
+          )
           | None -> finish := true
         done
       ) work_queue in
@@ -310,6 +308,13 @@ let sv_start () =
               Ok ()
           ) <|>
           ((raw |> Xml.Check.tag "message") >>= fun to_addr ->
+            (match !t_orig with
+            | None ->
+              if Mutex.try_lock orig_lock then
+                t_orig := Some (Unix.gettimeofday (), Sys.time ())
+                (* Mutex.unlock orig_lock; not releasing the lock ensures only the first thread will ever do it!! *)
+              else ()
+            | Some _ -> ());
             handle_message raw >>| fun (recip,xml) ->
               (*print_endline ("[FWD] " ^ Raw.to_string xml);*)
               Dispatch.dispatch recip xml; Ok ()
@@ -329,6 +334,4 @@ let sv_start () =
   Driver.(establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)))
 
 let () =
-  orig_utime := Unix.gettimeofday ();
-  orig_stime := Sys.time ();
   sv_start ()
