@@ -100,7 +100,6 @@ module Driver = struct
       let inchan = in_channel_of_descr s in
       let outchan = out_channel_of_descr s in
       let server_fun_with_cleanup (inc,outc) =
-        print_endline "Somebody connected!";
         let result = server_fun inc outc in
         close s; match result with
         | Ok _ -> ()
@@ -244,7 +243,9 @@ let sv_start () =
             Mutex.lock stream_lock;
               respond_tree xml;
             Mutex.unlock stream_lock;
-            inc_count ()
+            match xml with
+            | Raw.Branch ((_,"message",_),_) -> inc_count ()
+            | _ -> ()
           )
           | None -> finish := true
         done

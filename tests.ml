@@ -37,7 +37,6 @@ let consumer (cl,i) =
     cl#spill |> function
     | Error e -> begin
         print_endline (format "Error in client #%d: %s" i e);
-        finish := true;
       end
     | _ -> ()
   done
@@ -51,27 +50,31 @@ let () =
     cl
   ) in
 
-  at_exit (fun i ->
+  at_exit (fun () ->
     A.iter (fun cl -> cl#disconnect) clients
   );
 
   let select_trg = select_random_all n_recvers in
 
+  Thread.delay 5.0;
+
   print_endline "Connected and handshaked. Beginning...";
 
   (* Asynchronously send *)
-  A.iteri (fun i (cl:client) ->
+  let threads = A.mapi (fun i (cl:client) ->
     if i >= n_recvers then
-      ignore (Thread.create (fun () ->
+      Some (Thread.create (fun () ->
         while true do
           let trg = string_of_int (select_trg ()) in
           cl#message_t trg lipsum;
         done
-      ) () )
-    else ()
+      ) ())
+    else None
   ) clients
+  in
 
   (* LOOP TO INFINITY AND BEYOND *)
+  A.iter (function | Some t -> Thread.join t | None -> ()) threads;
 
 (*
   Idea is:
