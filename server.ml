@@ -129,19 +129,11 @@ let plain_auth_extract str =
     (nul *> take_till (fun _ -> false))
   in parse_only p (`String str)
 
-let orig_lock = Mutex.create ()
-let t_orig = ref None
 let n_msgs = ref 0
 let m_lock = Mutex.create ()
-let inc_count t =
+let inc_count () =
   Mutex.lock m_lock;
     incr n_msgs;
-    (if !n_msgs mod 50 = 0 then
-      match !t_orig with
-      | None -> print_endline (format "DISPATCHED %d msgs: (du,ds)=???" !n_msgs)
-      | Some (u0,s0) -> let (u,s) = t in
-        print_endline (format "DISPATCHED %d msgs: (du,ds)=(%f,%f)" !n_msgs (u -. u0) (s -. s0))
-    else () );
   Mutex.unlock m_lock
 
 let sv_start () =
@@ -252,7 +244,7 @@ let sv_start () =
             Mutex.lock stream_lock;
               respond_tree xml;
             Mutex.unlock stream_lock;
-            inc_count (Unix.gettimeofday (), Sys.time ())
+            inc_count ()
           )
           | None -> finish := true
         done
@@ -308,13 +300,6 @@ let sv_start () =
               Ok ()
           ) <|>
           ((raw |> Xml.Check.tag "message") >>= fun to_addr ->
-            (match !t_orig with
-            | None ->
-              if Mutex.try_lock orig_lock then
-                t_orig := Some (Unix.gettimeofday (), Sys.time ())
-                (* Mutex.unlock orig_lock; not releasing the lock ensures only the first thread will ever do it!! *)
-              else ()
-            | Some _ -> ());
             handle_message raw >>| fun (recip,xml) ->
               (*print_endline ("[FWD] " ^ Raw.to_string xml);*)
               Dispatch.dispatch recip xml; Ok ()
@@ -332,6 +317,31 @@ let sv_start () =
 
   in
   Driver.(establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)))
+
+let sampler () =
+  let time () = (Unix.gettimeofday (), Sys.time ()) in
+  let t_prev = ref (time ()) in
+  let prev_msgs = ref 0 in
+  let t_ideal_sleep = 5.0 in
+
+  while true do
+    let p = !prev_msgs in
+    let n = !n_msgs in
+    let t_now = time () in
+    prev_msgs := n;
+    let delta_n = n - p in
+    let delta_unix_s = fst t_now -. fst !t_prev in
+    let delta_sys_s = snd t_now -. snd !t_prev in
+    t_prev := t_now;
+    let throughp_unix = float_of_int delta_n /. delta_unix_s in
+    let throughp_sys = float_of_int delta_n /. delta_sys_s in
+    print_endline (format "DISPATCHED %d msgs in (u,d): (%f,%f)s; rate (%f,%f)msg/s"
+                    delta_n delta_unix_s delta_sys_s throughp_unix throughp_sys);
+    let t_again = time () in
+    let t_spent = fst t_again -. fst t_now in
+    let t_sleep = t_ideal_sleep -. t_spent in
+    Thread.delay t_sleep;
+  done
 
 let () =
   sv_start ()

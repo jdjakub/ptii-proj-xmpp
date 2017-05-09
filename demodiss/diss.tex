@@ -19,8 +19,9 @@
 
 \bibliographystyle{plain}
 
-\lstset{basicstyle=\ttfamily}
+\lstset{basicstyle=\ttfamily, tabsize=2}
 \newcommand{\code}{\lstinline}
+\lstnewenvironment{ocaml}{\lstset{language=[Objective]Caml, basicstyle=\ttfamily}}{}
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -156,13 +157,13 @@ The main Angstrom parser is \code{tree}, which converts nested opening/closing t
 
 These parsers are all implemented in terms of smaller named parsers, combined using the Angstrom parser combinators. For example, I defined \code{tag_open} this way:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let tag_open =
   tok_langle *> qual_name >>= fun (ns,id) ->
     lift2 (fun attrs _ -> Raw.Branch ((ns,id,attrs),[]))
       (many attr_val)
       tok_rangle
-\end{lstlisting}
+\end{ocaml}
 
 This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. To elaborate: \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')}, and so on, where \code{lex} skips whitespace.
 
