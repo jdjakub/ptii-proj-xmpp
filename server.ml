@@ -344,4 +344,5 @@ let sampler () =
   done
 
 let () =
+  Thread.create sampler ();
   sv_start ()
