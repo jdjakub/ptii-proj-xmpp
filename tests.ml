@@ -2,27 +2,6 @@ open Client
 module A = Array
 let format = Printf.sprintf
 
-let begin_transcription name cl =
-  let finish = ref false in
-  let transcript = open_out ("transcripts/" ^ name ^ ".xml") in
-  let transcribe str = output_string transcript str; output_char transcript '\n'; flush transcript in
-  let transcriber () =
-    while !finish = false do
-      cl#spill |> function
-      | Error e -> begin
-          transcribe e;
-          finish := true;
-        end
-      | Ok xml -> let open Xml.P in match xml with
-        | Raw.Branch ((pre,"message",attrs),ch) ->
-            let xml' = Raw.Branch ((pre,"message",attrs),[ Raw.Text "[message body]" ])
-            in transcribe (Xml.P.Raw.to_string xml')
-        | _ -> transcribe (Xml.P.Raw.to_string xml)
-    done;
-    close_out transcript;
-  in
-  (finish, Thread.create transcriber ())
-
 let select_random_all n () = Random.int n
 
 (* 445 chars *)
@@ -37,6 +16,11 @@ let consumer (cl,i) =
     cl#spill |> function
     | Error e -> begin
         print_endline (format "Error in client #%d: %s" i e);
+        finish := true
+      end
+    | Ok (Xml.P.Raw.Branch ((_,"stream",_),_)) -> begin
+        print_endline "Got closing </stream:stream>";
+        finish := true
       end
     | _ -> ()
   done
@@ -45,33 +29,46 @@ let () =
   (* Synchronously initialise clients and consumers *)
   let clients = A.init (n_senders + n_recvers) (fun i ->
     let cl = new client (string_of_int i) "ptii.proj" in
+    print_endline (format "Created client %d" i);
     cl#handshake;
+    print_endline (format "Client %d handshaked" i);
     Thread.create consumer (cl,i); (* Must come after handshake *)
     cl
   ) in
 
-  at_exit (fun () ->
-    A.iter (fun cl -> cl#disconnect) clients
-  );
-
   let select_trg = select_random_all n_recvers in
 
-  Thread.delay 5.0;
-
   print_endline "Connected and handshaked. Beginning...";
+  Thread.delay 1.0;
+  print_endline "Three";
+  Thread.delay 1.0;
+  print_endline "Two";
+  Thread.delay 1.0;
+  print_endline "One";
+  Thread.delay 1.0;
+  print_endline "Go.";
+
+  let stop = ref false in
 
   (* Asynchronously send *)
-  let threads = A.mapi (fun i (cl:client) ->
+  let threads = A.mapi (fun i cl ->
     if i >= n_recvers then
       Some (Thread.create (fun () ->
-        while true do
+        while !stop = false do
           let trg = string_of_int (select_trg ()) in
-          cl#message_t trg lipsum;
+          cl#message_t trg "Hi";
         done
       ) ())
     else None
   ) clients
   in
+
+  at_exit (fun () ->
+    stop := true;
+    (* How crazy is this?! *)
+    A.iter (function | Some t -> Thread.join t | None -> ()) threads;
+    A.iter (fun cl -> cl#disconnect) clients
+  );
 
   (* LOOP TO INFINITY AND BEYOND *)
   A.iter (function | Some t -> Thread.join t | None -> ()) threads;

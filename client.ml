@@ -73,25 +73,26 @@ object (self)
 
     Ok (List.map Xmpp.Roster.item_of_xml items)
 
-  method message ?time recpt body =
+  method message recpt body =
     let attrs = [ "type", "chat"; "to", recpt ^ "@" ^ svname ] in
-    let attrs = match time with
-      | None -> attrs
-      | Some true | Some false -> ( "time", "show" ) :: attrs
-    in
     self#respond_tree
       Raw.(xml_n "message" attrs [
         body
       ])
 
-  method message_t ?time recpt body =
-    self#message ?time recpt Raw.(text body)
+  method message_t recpt body =
+    self#message recpt Raw.(text body)
 
   method disconnect =
     self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] []);
     self#respond "</stream:stream>"
 
   method spill =
-    self#expect Xml.P.tree
+    let open Angstrom in
+    self#expect Xml.P.(tree <|>
+      (tag_close ("stream","stream") *>
+        return Raw.(xml_n "stream" [] [ text "Closed stream" ])
+      )
+    )
 
 end

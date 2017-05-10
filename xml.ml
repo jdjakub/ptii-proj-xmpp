@@ -185,7 +185,7 @@ module Check = struct
     | Xml xml ->
       let t' = snd xml.tag in
       if t' = t then Ok (Xml xml) else Error t'
-    | Text _ -> Error ("Expected '" ^ t ^ "' element, got content instead")
+    | Text (_,str) -> Error (format "Expected '%s' element, got content instead: %s" t str)
 
   let attr k = function
     | Xml xml -> (match xml.attr k with
@@ -290,9 +290,6 @@ let expect buf_r fill p =
 let buffered_expect in_ch =
   let hackbuf = Bytes.create 512 in
   let fill_buf buf =
-    (*print_endline "Filling";*)
-    (*let foo = "<?xml version='1.0'?><stream:stream></stream:stream><foo></foo>" in*)
-    (* Bytes.blit foo 0 hackbuf 0 (String.length foo); *)
     let num_read = input in_ch hackbuf 0 (Bytes.length hackbuf) (* String.length foo*) in
     Bigstring.blit_of_bytes hackbuf 0 buf 0 num_read;
     num_read

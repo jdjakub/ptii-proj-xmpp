@@ -271,13 +271,8 @@ let sv_start () =
       let handle_message =
         Xml.Check.(attr "to" >>= fun recipient ->
           attr "type" >>= fun msg_type ->
-          attr_opt "time" >>= fun time_opt ->
           orig >>= fun (Raw.Branch ((_,_,_),chs)) ->
             let attrs = [ "to", recipient; "from", raw_jid; "type", msg_type ] in
-            let attrs = match time_opt with
-              | Some value -> ( "time", value ) :: attrs
-              | None -> attrs
-            in
             pure (recipient, Raw.(xml ("","jabber:client") "message" attrs chs))
         )
       in
