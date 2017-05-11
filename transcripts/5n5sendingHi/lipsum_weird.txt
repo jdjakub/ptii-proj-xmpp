@@ -1,0 +1,35 @@
+[FWD] <message xmlns="jabber:client" to="2@ptii.proj" from="1@ptii.proj" type="chat">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</message>
+
+[OUT] <message xmlns="jabber:client" to="2@ptii.proj" from="1@ptii.proj" type="chat">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</message> [/OUT]
+
+[IN]: <message xmlns="jabber:client" to="2@ptii.proj" from="1@ptii.proj" type="chat">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id [/IN]
+[IN]: est laborum.</message>[/IN]
+
+Branch [
+  Text
+   "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\nUt enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.\nDuis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id ";
+  Branch [
+    Text
+     "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\nUt enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.\nDuis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+  ];
+  Xml.P.Raw.Text "est laborum."
+]
+
+Before dinner: make rest of plan, explore this problem
+
+20:45-21:15: Handshake with Psi, send a couple of messages; screengrab <NOT DONE>
+21:20-21:50: Design graph for alice, bob, carroll; make roster files. Prepare transcriber and test program for the 6 ways of connecting. <utop transcript for ABC done>
+21:55-22:25: Perform the tests. Write up results: presence notification patterns and requested rosters.
+22:25-22:45: Fun break.
+22:45-23:15: Decide on working message content. Produce another graph for eg 50-50 send/recv, or sth else if Mort replies with suggestion.
+23:20-23:50: Ah, whatever, produce another graph or two. Just to be able to see some trend in #clients.
+23:55-00:25: Put writeup and graphs into Evaluation.
+00:30-01:00: Outline Preparation.
+01:05-01:35: Introduction plus stitching Preparation.
+01:40-02:00: Conclusion and stitching leftovers in Implementation. Send.

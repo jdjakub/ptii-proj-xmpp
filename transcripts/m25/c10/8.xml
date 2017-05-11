@@ -1,0 +1,18 @@
+<presence from="8@ptii.proj" to="8@ptii.proj/res"/>
+<presence from="9@ptii.proj"/>
+<message xmlns="jabber:client" to="8@ptii.proj" from="4@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="5@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="7@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="2@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="3@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="3@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="9@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="6@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="3@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="9@ptii.proj" type="chat">[message body]</message>
+<message xmlns="jabber:client" to="8@ptii.proj" from="0@ptii.proj" type="chat">[message body]</message>
+<presence type="unavailable" from="0@ptii.proj"/>
+<presence type="unavailable" from="1@ptii.proj"/>
+<presence type="unavailable" from="3@ptii.proj"/>
+<presence type="unavailable" from="2@ptii.proj"/>
+Didn't get anything

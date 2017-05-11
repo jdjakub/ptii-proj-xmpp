@@ -242,6 +242,7 @@ let sv_start () =
           | Some xml -> (
             Mutex.lock stream_lock;
               respond_tree xml;
+              print_endline (Raw.to_string xml);
             Mutex.unlock stream_lock;
             match xml with
             | Raw.Branch ((_,"message",_),_) -> inc_count ()
@@ -297,7 +298,7 @@ let sv_start () =
           ) <|>
           ((raw |> Xml.Check.tag "message") >>= fun to_addr ->
             handle_message raw >>| fun (recip,xml) ->
-              (*print_endline ("[FWD] " ^ Raw.to_string xml);*)
+              print_endline ("[FWD] " ^ Raw.to_string xml);
               Dispatch.dispatch recip xml; Ok ()
           )
         ) |> function

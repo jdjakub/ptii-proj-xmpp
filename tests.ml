@@ -10,6 +10,8 @@ let lipsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do ei
 let n_senders = 5
 let n_recvers = n_senders
 
+module Raw = Xml.P.Raw
+
 let consumer (cl,i) =
   let finish = ref false in
   while !finish = false do

@@ -1,7 +1,3 @@
-Regex to use is
-
-egrep -oh "[0-9]+\.[0-9]+"
-
 DISPATCHED      0 msgs in (u,d): (5.004380,0.012248)s; rate (0.000000,0.000000)msg/s
 DISPATCHED  99943 msgs in (u,d): (5.000074,4.690600)s; rate (19988.303581,21307.082250)msg/s
 DISPATCHED 137923 msgs in (u,d): (5.003321,6.541883)s; rate (27566.290842,21083.073482)msg/s
