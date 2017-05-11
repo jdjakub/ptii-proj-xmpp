@@ -7,7 +7,7 @@ let select_random_all n () = Random.int n
 (* 445 chars *)
 let lipsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\nUt enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.\nDuis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
 
-let n_senders = 5
+let n_senders = 80
 let n_recvers = n_senders
 
 module Raw = Xml.P.Raw
@@ -58,7 +58,7 @@ let () =
       Some (Thread.create (fun () ->
         while !stop = false do
           let trg = string_of_int (select_trg ()) in
-          cl#message_t trg "Hi";
+          cl#message_t trg lipsum;
         done
       ) ())
     else None
