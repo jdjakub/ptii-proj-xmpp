@@ -1,0 +1,79 @@
+utop # let alice = newcl "alice";;
+val alice : client = <obj>
+utop # let bob = newcl "bob";;
+val bob : client = <obj>
+utop # let caroll = newcl "caroll";;
+val caroll : client = <obj>
+utop # alice#handshake;;
+- : ((Xmpp.Roster.item, string) result list, string) result =
+Result.Ok
+ [Ok
+   {Xmpp.Roster.jid = "bob@ptii.proj"; name = "Bob"; recv_ok = true;
+    send_ok = false; groups = []};
+  Ok
+   {Xmpp.Roster.jid = "caroll@ptii.proj"; name = "Caroll"; recv_ok = false;
+    send_ok = false; groups = []}]
+
+utop # alice#spill;;
+- : (Raw.xml, string) result =
+Result.Ok
+ (Xml.P.Raw.Branch
+   (("", "presence",
+     [(("", "from"), "alice@ptii.proj"); (("", "to"), "alice@ptii.proj/res")]),
+   []))
+
+utop # bob#handshake;;
+- : ((Xmpp.Roster.item, string) result list, string) result =
+Result.Ok
+[Pervasives.Ok
+  {Xmpp.Roster.jid = "alice@ptii.proj"; name = "Alice"; recv_ok = false;
+   send_ok = true; groups = []};
+ Pervasives.Ok
+  {Xmpp.Roster.jid = "caroll@ptii.proj"; name = "Caroll"; recv_ok = true;
+   send_ok = true; groups = []}]
+
+utop # bob#spill >>| Raw.to_string;;
+- : (string, string) result =
+Result.Ok "<presence from=\"bob@ptii.proj\" to=\"bob@ptii.proj/res\"/>"
+
+utop # alice#spill >>| Raw.to_string;;
+- : (string, string) result = Result.Ok "<presence from=\"bob@ptii.proj\"/>"
+
+utop # caroll#handshake >>| Raw.to_string;;
+- : ((Xmpp.Roster.item, string) result list, string) result =
+Result.Ok
+ [Pervasives.Ok
+   {Xmpp.Roster.jid = "alice@ptii.proj"; name = "Alice"; recv_ok = false;
+    send_ok = false; groups = []};
+  Pervasives.Ok
+   {Xmpp.Roster.jid = "bob@ptii.proj"; name = "Bob"; recv_ok = true;
+    send_ok = true; groups = []}]
+
+utop # caroll#spill >>| Raw.to_string;;
+- : (string, string) result =
+Result.Ok "<presence from=\"caroll@ptii.proj\" to=\"caroll@ptii.proj/res\"/>"
+
+utop # bob#spill >>| Raw.to_string;;
+- : (string, string) result = Result.Ok "<presence from=\"caroll@ptii.proj\"/>"
+
+utop # alice#spill >>| Raw.to_string;;
+<blocks>
+
+utop # caroll#disconnect;;
+- : unit  = ()
+
+utop # bob#spill;;
+- : (Raw.xml, string) result =
+Result.Ok
+ (Xml.P.Raw.Branch
+   (("", "presence",
+     [(("", "type"), "unavailable"); (("", "from"), "caroll@ptii.proj")]),
+   []))
+
+utop # alice#spill >>| Raw.to_string;;
+<blocks>
+
+utop # alice#spill >>| Raw.to_string;;
+
+- : (string, string) result =
+Result.Ok "<presence type=\"unavailable\" from=\"bob@ptii.proj\"/>"

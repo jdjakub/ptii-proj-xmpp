@@ -1,0 +1,4 @@
+<roster>
+  <item jid="alice@ptii.proj" name="Alice" subscription="none" />
+  <item jid="bob@ptii.proj" name="Bob" subscription="both" />
+</roster>
