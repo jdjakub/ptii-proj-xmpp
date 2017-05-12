@@ -28,7 +28,7 @@ Before dinner: make rest of plan, explore this problem
 21:55-22:25: Perform the tests. Write up results: presence notification patterns and requested rosters.
 22:25-22:45: Fun break.
 22:45-23:15: Decide on working message content. Produce another graph for eg 50-50 send/recv, or sth else if Mort replies with suggestion.
-23:20-23:50: Ah, whatever, produce another graph or two. Just to be able to see some trend in #clients.
+23:20-23:50: Ah, whatever, produce another graph or two. Just to be able to see some trend in #clients. <got graphs>
 23:55-00:25: Put writeup and graphs into Evaluation.
 00:30-01:00: Outline Preparation.
 01:05-01:35: Introduction plus stitching Preparation.
