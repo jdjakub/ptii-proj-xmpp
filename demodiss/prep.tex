@@ -7,7 +7,7 @@ I relied on the existing OCaml platform, including its standard libraries and ot
 \section{The OCaml language}
 Objective-Caml, or OCaml, is a primarily functional language with imperative and object-oriented features. I had already used OCaml, to a basic extent, on an internship during the summer; this had given me some experience with the Angstrom parser combinator library. I referred to Internet resources and the \name{Real World OCaml} book to re-familiarise myself and fill the gaps in my knowledge.
 
-I surveyed the documentation for the \code{Unix} module, to remind myself of how the Sockets API operates. I put together a couple of small test servers and clients to verify I could use the networking functions from OCaml correctly. This also provided an opportunity to get used to the build system again.
+I surveyed the documentation for the \code{Unix} module, to remind myself of how the Sockets API operates. I then put together a couple of small test servers and clients to verify I could use the networking functions from OCaml correctly. This also provided an opportunity to get used to the build system again.
 
 I also browsed the small standard library for data structure implementations. All of the basic ones exist, and more specialised versions are provided in external libraries should I need them.
 
@@ -27,10 +27,10 @@ where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are
 </qname>
 \end{xml}
 
-\subsection{Namespaces}
+\subsection{Namespaces}\label{sec:namespaces}
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.
 
-There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas or comments / \code{CDATA} sections.
+There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project, and did not investigate them. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas or comments / \code{CDATA} sections.
 
 \subsection{Formal grammar for XML}
 I developed the following informal Context-Free Grammar for this subset of XML, to guide my implementation of the parser:
@@ -52,14 +52,7 @@ I developed the following informal Context-Free Grammar for this subset of XML, 
 In the CFG, \code{ident} denotes an identifier, \code{string} represents a text string containing appropriately escaped quote characters, and \code{text} refers to free text not containing angle bracket characters. This was strictly a guide, to give the general shape of the syntax. Obviously XML parsing is not \emph{truly} context-free as the closing tag must match the opening tag; nevertheless, such a grammar is still useful.
 
 \section{The XMPP Protocol}
-\begin{itemize}
-  \item sources: RFC, book, Psi
-  \item strategy: breadth-first not depth-first
-  \item XML streams; errors
-  \item The handshake; authentication, encryption ...
-  \item roster (data structs; spork from impl)
-  \item Messaging and stanzas (data structs; threading)
-\end{itemize}
+
 \subsection{Understanding the protocol}
 The most comprehensive and in-depth resource on XMPP is the specification, RFC 6120. My first attempt at understanding XMPP involved trying to read this document. Since at first all I wanted was a broad picture, I found the book \name{XMPP: The Definitive Guide} to be a more appropriate resource.
 

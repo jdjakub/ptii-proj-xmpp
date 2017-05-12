@@ -70,27 +70,17 @@ by \texttt{detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
 
 \section*{Original Aims of the Project}
 
-To write a demonstration dissertation\footnote{A normal footnote without the
-complication of being in a table.} using \LaTeX\ to save
-student's time when writing their own dissertations. The dissertation
-should illustrate how to use the more common \LaTeX\ constructs. It
-should include pictures and diagrams to show how these can be
-incorporated into the dissertation.  It should contain the entire
-\LaTeX\ source of the dissertation and the makefile.  It should
-explain how to construct an MSDOS disk of the dissertation in
-Postscript format that can be used by the book shop for printing, and,
-finally, it should have the prescribed layout and format of a diploma
-dissertation.
-
+To use the OCaml language and its libraries to build a server implementing the XMPP protocol \ldots conforming to the core XMPP spec as well as the XMPP-IM extension spec.
 
 \section*{Work Completed}
 
-All that has been completed appears in this dissertation.
+A server, implementing basic XMPP functionality, including message forwarding to clients and presence notification according to subscription between clients. A simple client was also developed for testing purposes, and its bytecode form is interactively usable in the OCaml toplevel.
 
 \section*{Special Difficulties}
 
-Learning how to incorporate encapulated postscript into a \LaTeX\
-document on both Ubuntu Linux and OS X.
+None? (I feel like there was a primary special difficulty, namely that XMPP is a huge and complicated protocol and that the RFCs are tedious to get through.)
+
+Interesting: \textit{``It is quite in order for the Proforma page to point out \textbf{how ambitious} the original aims were, and how the work completed represents the triumphant consequence of \textbf{considerable effort against a background of unpredictable disasters}. The substantiation of these claims will follow in the rest of the dissertation.''} -- Pink Book
 
 \newpage
 \section*{Declaration}
@@ -103,14 +93,12 @@ does not contain material that has already been used to any substantial
 extent for a comparable purpose.
 
 \bigskip
-\leftline{Signed [signature]}
+\leftline{Signed Joel Jakubovic}
 
 \medskip
 \leftline{Date [date]}
 
 \tableofcontents
-
-\listoffigures
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % now for the chapters
@@ -118,7 +106,7 @@ extent for a comparable purpose.
 \pagestyle{headings}
 
 \section{Introduction}
-The eXtensible Messaging and Presence Protocol (XMPP) is designed for securely passing XML messages between clients and servers. Amongst its services are ordinary instant-messaging functionality, storage of contacts, discovery of online status of users, and push-based notifications. Google and Apple employ it for the latter use, and it is central to the well-known WhatsApp messaging application. ...
+The eXtensible Messaging and Presence Protocol (XMPP) is designed for securely passing XML messages between clients and servers. Amongst its services are ordinary instant-messaging functionality, storage of contacts, discovery of online status of users, and push-based notifications. Google and Apple employ it for the latter use, and it is central to the well-known WhatsApp messaging application. \ldots
 
 \chapter{Preparation}
 For the bulk of the preparatory work, the clue was in the title: I needed to be familiar with OCaml and XMPP. This involved maintaining a basic level of competence with OCaml language features, as well as experience with the libraries and tools I was going to use; understanding of the basic concepts of XML, and which features are relevant to XMPP; then, the details of the XMPP protocol itself. Once I had a vision of what would be needed, I could design the general architecture of the server.
@@ -129,7 +117,7 @@ I relied on the existing OCaml platform, including its standard libraries and ot
 \section{The OCaml language}
 Objective-Caml, or OCaml, is a primarily functional language with imperative and object-oriented features. I had already used OCaml, to a basic extent, on an internship during the summer; this had given me some experience with the Angstrom parser combinator library. I referred to Internet resources and the \name{Real World OCaml} book to re-familiarise myself and fill the gaps in my knowledge.
 
-I surveyed the documentation for the \code{Unix} module, to remind myself of how the Sockets API operates. I put together a couple of small test servers and clients to verify I could use the networking functions from OCaml correctly. This also provided an opportunity to get used to the build system again.
+I surveyed the documentation for the \code{Unix} module, to remind myself of how the Sockets API operates. I then put together a couple of small test servers and clients to verify I could use the networking functions from OCaml correctly. This also provided an opportunity to get used to the build system again.
 
 I also browsed the small standard library for data structure implementations. All of the basic ones exist, and more specialised versions are provided in external libraries should I need them.
 
@@ -149,7 +137,7 @@ where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are
 </qname>
 \end{xml}
 
-\subsection{Namespaces}
+\subsection{Namespaces}\label{sec:namespaces}
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.
 
 There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas or comments / \code{CDATA} sections.
@@ -174,14 +162,7 @@ I developed the following informal Context-Free Grammar for this subset of XML, 
 In the CFG, \code{ident} denotes an identifier, \code{string} represents a text string containing appropriately escaped quote characters, and \code{text} refers to free text not containing angle bracket characters. This was strictly a guide, to give the general shape of the syntax. Obviously XML parsing is not \emph{truly} context-free as the closing tag must match the opening tag; nevertheless, such a grammar is still useful.
 
 \section{The XMPP Protocol}
-\begin{itemize}
-  \item sources: RFC, book, Psi
-  \item strategy: breadth-first not depth-first
-  \item XML streams; errors
-  \item The handshake; authentication, encryption ...
-  \item roster (data structs; spork from impl)
-  \item Messaging and stanzas (data structs; threading)
-\end{itemize}
+
 \subsection{Understanding the protocol}
 The most comprehensive and in-depth resource on XMPP is the specification, RFC 6120. My first attempt at understanding XMPP involved trying to read this document. Since at first all I wanted was a broad picture, I found the book \name{XMPP: The Definitive Guide} to be a more appropriate resource.
 
@@ -194,7 +175,7 @@ What follows in subsequent sections is my consideration of specific parts of XMP
 \subsection{Handshake and setup considerations}
 Outline:
 \begin{itemize}
-  \item Exposition of Section \ref{sec:handshake-impl}; the basic steps in setting up an XMPP session
+  \item Exposition of Section \ref{sec:server-setup}; the basic steps in setting up an XMPP session
   \item Not bothering with authentication, encryption ... all extraneous and viewed as extensions.
   \item Stream errors and disconnection
 \end{itemize}
@@ -583,7 +564,7 @@ When \code{Driver.establish_server} accepts a client connection, it opens a read
 
 All of these stages make use of the \code{Result} monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
 
-\subsubsection{Setup stage}
+\subsubsection{Setup stage}\label{sec:server-setup}
 After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the \code{<stream>} opening element from the client (after an XML declaration), and responds with its own. It looks like this:
 
 \begin{ocaml}
@@ -700,27 +681,35 @@ The server samples its throughput at regular intervals and outputs the values. I
 
 \subsubsection{Throughput over time}
 The characteristic in Figure~\ref{fig:5n5} shows a normal characteristic which stabilises.
-\begin{figure}\label{fig:5n5}
+\begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/5n5/5n5.png}
+  \caption{5 send-receive pairs.}
+  \label{fig:5n5}
 \end{figure}
 
 In Figure~\ref{fig:10n10}, at 10 client pairs, there is an odd dip at around $t=300s$.
-\begin{figure}\label{fig:10n10}
+\begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/10n10/10n10.png}
+  \caption{10 send-receive pairs.}
+  \label{fig:10n10}
 \end{figure}
 
 From 15 to 20 (Figure~\ref{fig:15n20}), we see much more chaotic behaviour from $t=300s$ that does not seem to stabilise:
-\begin{figure}\label{fig:15n20}
+\begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/15n15/15n15.png}
 
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/20n20/20n20.png}
+  \caption{20 send-receive pairs.}
+  \label{fig:15n20}
 \end{figure}
 
 Stabilisation begins to return at 25 and beyond in Figure~\ref{fig:lots}. (Supposed to show 25-60)
-\begin{figure}\label{fig:lots}
+\begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/25n25/25n25.png}
 
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/30n30.png}
+  \caption{30 send-receive pairs.}
+  \label{fig:lots}
 \end{figure}
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/40n40/40n40.png}
@@ -735,8 +724,10 @@ Stabilisation begins to return at 25 and beyond in Figure~\ref{fig:lots}. (Suppo
 
 I took the average of throughput samples in the stable-looking regions (or, for the chaotic graphs, the relatively stable-looking regions) and took the values as the ``operating throughputs'' of my server for these parameters. From this I obtained the indication of operating throughput as a function of client load shown in Figure~\ref{fig:summary}.
 
-\begin{figure}\label{fig:summary}
+\begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/throughp_clients.png}
+  \caption{Effect of client load on operating throughput.}
+  \label{fig:summary}
 \end{figure}
 
 \chapter{Conclusion}

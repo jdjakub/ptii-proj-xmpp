@@ -345,7 +345,7 @@ When \code{Driver.establish_server} accepts a client connection, it opens a read
 
 All of these stages make use of the \code{Result} monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
 
-\subsubsection{Setup stage}
+\subsubsection{Setup stage}\label{sec:server-setup}
 After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the \code{<stream>} opening element from the client (after an XML declaration), and responds with its own. It looks like this:
 
 \begin{ocaml}
