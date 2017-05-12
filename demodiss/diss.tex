@@ -19,9 +19,11 @@
 
 \bibliographystyle{plain}
 
-\lstset{basicstyle=\ttfamily, tabsize=2}
+\lstset{basicstyle=\ttfamily, tabsize=2, columns=flexible, showstringspaces=false}
 \newcommand{\code}{\lstinline}
-\lstnewenvironment{ocaml}{\lstset{language=[Objective]Caml, basicstyle=\ttfamily}}{}
+\newcommand{\name}{\textsl}
+\lstnewenvironment{xml}{\lstset{language=Xml, basicstyle=\ttfamily}}{}
+\lstnewenvironment{ocaml}{\lstset{language=[Objective]Caml}}{}
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -142,17 +144,17 @@ The server needed to handle many clients at once, so I needed some form of multi
 
 \section{XML}
 XML is a notation for hierarchical trees, and an XML node \footnote{Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'.} has the form
-\begin{lstlisting}[language=xml]
+\begin{xml}
 <prefix:tag pre1:attr1="value1" pre2:attr2="value2" ... pren:attrn="valuen" >
    ... children ...
 </prefix:tag>
-\end{lstlisting}
+\end{xml}
 where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are absent from attributes, but they are used in a couple of important cases outlined below. I call the combination of prefix and identifier a \emph{qualified name}. This way, a node can be seen as
-\begin{lstlisting}[language=xml]
+\begin{xml}
 <qname qname1="value1" qname2="value2" ... qnamen="valuen" >
   ...
 </qname>
-\end{lstlisting}
+\end{xml}
 
 \subsection{Namespaces}\label{sec:namespaces}
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.
@@ -162,17 +164,20 @@ There are other special `attributes' in this fashion, such as \code{xml:lang}, w
 \subsection{Formal grammar for XML}
 I developed the following informal Context-Free Grammar for this subset of XML, to guide my implementation of the parser:
 
-\begin{lstlisting}
-qname    ::= (ident ':')? ident
-attr_val ::= qname '=' '"' string '"'
-branch   ::= '<' qname attr_val* tag_end
-tag_end  ::= '/>'
-           | '>' node '</' qname '>'
+\begin{minipage}{\linewidth}
+  \begin{lstlisting}
+  qname    ::= (ident ':')? ident
+  attr_val ::= qname '=' '"' string '"'
+  branch   ::= '<' qname attr_val* tag_end
+  tag_end  ::= '/>'
+             | '>' node '</' qname '>'
 
-node     ::= branch
-           | text
+  node     ::= branch
+             | text
 
-\end{lstlisting}
+  \end{lstlisting}
+\end{minipage}
+
 In the CFG, \code{ident} denotes an identifier, \code{string} represents a text string containing appropriately escaped quote characters, and \code{text} refers to free text not containing angle bracket characters. This was strictly a guide, to give the general shape of the syntax. Obviously XML parsing is not \emph{truly} context-free as the closing tag must match the opening tag; nevertheless, such a grammar is still useful.
 
 \section{The XMPP Protocol}
@@ -235,41 +240,41 @@ The main Angstrom parser is \code{tree}, which converts nested opening/closing t
 
 These parsers are all implemented in terms of smaller named parsers, combined using the Angstrom parser combinators. For example, I defined \code{tag_open} this way:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let tag_open =
   tok_langle *> qual_name >>= fun (ns,id) ->
     lift2 (fun attrs _ -> Raw.Branch ((ns,id,attrs),[]))
       (many attr_val)
       tok_rangle
-\end{lstlisting}
+\end{ocaml}
 
 This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. To elaborate: \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')}, and so on, where \code{lex} skips whitespace.
 
 The parsers written in this manner resemble the Context-Free-Grammars of XML structures, although the choice operator \code{<|>} is an ordered choice. This shows itself in my implementation of \code{tree}:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let tree = fix ( fun t_rec ->
   ( tok_langle *> qual_name >>= fun (ns,id) ->
           lift2 (fun attrs children -> Raw.Branch ((ns, id, attrs), children))
             (many attr_val)
             (tok_leaf *> return [] <|> tok_rangle *> branch t_rec (ns,id)) )
   <|> (take_while1 (function | '<' -> false | _ -> true) >>| Raw.text) )
-\end{lstlisting}
+\end{ocaml}
 
 As an XML node can be simple text, this is accounted for by assuming text content when an attempt to parse a tag fails.
 
-[more on parsers]
+[should I include more on parsers?]
 
 \subsection{The \code{Raw} module}
 As mentioned, the \code{Raw} module contains the `literal' abstract XML representation that these parsers target. Consider
 
-\begin{lstlisting}[language=xml,label={lst:xmlsample}]
+\begin{xml}[label={lst:xmlsample}]
 <foo:error type="fatal" xmlns:foo="long-application-namespace" >
   <a></a>
   <b></b>
   Sample text
 </foo:error>
-\end{lstlisting}
+\end{xml}
 
 The parent node has a qualified tag \code{foo:error}, along with a list of attributes. Each attribute conceptually consists of a prefix, name and value. The prefix might be empty, such as the case of \code{type="fatal"}. The first task of abstract representation is to make all of these explicit, representing attributes as pairs of qualified names and values. \code{type="fatal"} and \code{xmlns:foo="bar"} become the list
 \begin{lstlisting}
@@ -277,7 +282,7 @@ The parent node has a qualified tag \code{foo:error}, along with a list of attri
 \end{lstlisting}
 The above XML source would parse into the following \code{Raw.xml}:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 Branch ( ("foo", "error", [
     (("", "type"), "fatal");
     (("xmlns", "foo"), "long-application-namespace")
@@ -286,13 +291,13 @@ Branch ( ("foo", "error", [
     Branch ( ("", "b", []) , []) ;
     Text "Sample text" ;
 ] )
-\end{lstlisting}
+\end{ocaml}
 
 Note the `literal' interpretation of the attribute list as an actual OCaml list. Technically, the order of XML attributes does not matter, but it is simpler to use a list at this level. Also, the special considerations of namespaces and prefixes are not handled at this level; it sees \code{xmlns:foo="bar"} as just another attribute.
 
 The \code{Raw} module provides functions to convert its data structures into strings. The main \code{to_string} function, which recursively serialises an XML tree, is as follows:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let rec to_string = function
   | Text str -> str
   | (Branch ((ns,tag,attrs),children)) as xml ->
@@ -300,14 +305,14 @@ let rec to_string = function
     | [] -> to_string_single (ns,tag,attrs)
     | _  -> let interior = String.concat "" (List.map to_string children) in
             to_string_open xml ^ interior ^ to_string_close xml
-\end{lstlisting}
+\end{ocaml}
 
 An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags. [indentation?] [sanitisation?][more on \code{to_string_open}, \code{string_of_qname}, \code{string_of_attrs}]
 
 \subsubsection{Utility constructors}
 Initially, having the \code{Raw} representation and its serialisation functions, I simply used them to generate the server responses. However, many elements needed at least a default namespace, all prefixes needed to be explicitly specified, and the syntax was very heavy to write and read:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 respond_tree
   (X.Xml (("stream","features",[]),[
     X.Xml (("","mechanisms",[(("","xmlns"),Xmpp.sasl)]),[
@@ -315,45 +320,45 @@ respond_tree
         X.Xml (("","required",[]),[])
       ])
   ]));
-\end{lstlisting}
+\end{ocaml}
 
 After consideration, I reasoned that it would be easier in the long run to add some conveniences for such construction of XML trees in OCaml code. Firstly, I wanted to avoid writing prefixes. The tags mostly use the default (empty) prefix, and the only attribute prefix that is ever used is \code{xmlns:}. By handling namespaces in a more convenient fashion, I could avoid having to specify prefixes for both tags and attributes altogether.
 
 For the purposes of output, I committed to using only one, standard prefix per namespace (recall that prefixes are local to parts of a tree, but such freedom is not really needed here). I bundled namespaces and prefixes together, so that I could refer to them by a simple OCaml identifier. For example, the opening \code{<stream:stream>} element uses the stream prefix, referring to the namespace \code{http://etherx.jabber.org/streams}. I made definitions (in the \code{Xmpp} module) like so:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let jstream  = ("stream","http://etherx.jabber.org/streams")
 let jclient  = ("client","jabber:client")
 let jserver  = ("server","jabber:server")
-\end{lstlisting}
+\end{ocaml}
 
 Other namespaces were only ever used with the default (empty) prefix. I did the same with them:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let streams = ("","urn:ietf:params:xml:ns:xmpp-streams")
 let session = ("","urn:ietf:params:xml:ns:xmpp-session")
 let sasl    = ("","urn:ietf:params:xml:ns:xmpp-sasl")
 let bind    = ("","urn:ietf:params:xml:ns:xmpp-bind")
 ...
-\end{lstlisting}
+\end{ocaml}
 
 I developed convenience functions to construct XML trees using this: \code{xml_d}, \code{xml}, \code{xml_n}, and \code{text}.
 
 For \code{xml_n}, the \code{n} stands for ``no namespace''. This is used for child XML that does not use namespaces at all. For example, the following:
-\begin{lstlisting}
+\begin{ocaml}
 xml_n "rectangle" [ "width", "240"; "height", "180" ] [
   text "Sample text"
 ]
-\end{lstlisting} constructs the \code{Raw.xml}
-\begin{lstlisting}
+\end{ocaml} constructs the \code{Raw.xml}
+\begin{ocaml}
 Raw.Xml (("","rectangle",[(("","width"),"240"); (("","height"),"180")]),[
   Raw.Text "Sample text"
 ]
-\end{lstlisting}
+\end{ocaml}
 
 \code{xml_d} means `declare'. It is similar to \code{xml_n}, but accepts a prefix-namespace pair. It applies the prefix to the tag and declares the association between prefix and tag in the attributes, automatically. This means that example \ref{lst:xmlsample} could be constructed like so:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 module Xmpp = struct
   ...
   let foo = ("foo", "long-application-namespace")
@@ -365,7 +370,7 @@ xml_d Xmpp.foo [ "type", "fatal" ] [
   xml_n "b" [] [];
   text "Sample text"
 ]
-\end{lstlisting}
+\end{ocaml}
 
 Finally, \code{xml} is a somewhat idiosyncratic variant that exists for child XML that can use a prefix, but does not declare it. [made sense at the time ... rather obscure motivation. probably worth leaving out --- though it \emph{is} used in code samples!]
 
@@ -374,7 +379,7 @@ The advantages of this notation are clear: high signal-to-noise ratio\footnote{O
 \subsection{High-level \code{xml_node}}
 The higher-level representation, \code{xml_node}, exists for situations where \code{Raw}'s data structures become unwieldy. It is defined as follows:
 
-\begin{lstlisting}[lanuage=ml]
+\begin{ocaml}
 type xml_node =
 | Text of lang * string
 | Xml of {
@@ -386,7 +391,7 @@ type xml_node =
   child : xml_node list;
   orig  : P.Raw.xml;
 }
-\end{lstlisting}
+\end{ocaml}
 
 The main improvement is the use of an opaque attribute lookup function, rather than an explicit data structure. \code{attr_full} takes a qualified name, but since most attributes do not have a namespace prefix, the more convenient attr is also provided. \code{attr} is implemented as calling \code{attr_full} with an empty namespace prefix.
 
@@ -434,11 +439,11 @@ I avoid using the word `return' here, as strictly what these functions return is
 \subsubsection{Matcher combinators}
 The combinators let me write XML matching code resembling, as closely as possible in OCaml\footnote{Short of syntax extensions perhaps, which I am unfamiliar with}, the XML itself:
 
-\begin{lstlisting}
+\begin{ocaml}
 tag "iq" *> attv "type" "get" *> attr "id" >>= fun id ->
   (* id is now bound to the "id" attribute *)
   ...
-\end{lstlisting}
+\end{ocaml}
 
 This would succeed on the XML node
 \begin{lstlisting}[language=xml]
@@ -457,13 +462,13 @@ I implemented the usual \code{>>=} for `bind', \code{*>} for `sequence', \code{<
 
 The matcher implementations are all fairly straightforward and similar to each other. For instance, \code{attr}:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let attr k = function
   | Xml xml -> (match xml.attr k with
     | Some v -> Ok v
     | None -> Error (format "Expected %s attribute in <%s> tag" k (snd xml.tag)) )
   | Text _ -> Error "Expected XML, not content"
-\end{lstlisting}
+\end{ocaml}
 
 Out of the above matchers, only \code{text} makes sense for text nodes. Because both the low- and high-level XML types incorporate the possibility of text, all matchers except \code{text} have to account for this case at runtime.
 
@@ -476,9 +481,9 @@ Angstrom's \code{Buffered} interface maintains an internal buffer, of type \code
 
 The user-level \code{expect} function takes an Angstrom parser (usually \code{P.tree}) and tries to parse from these internal network-backed buffers. It returns a \code{Result} value, and is often used in tandem with the high-level XML functions like so:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
-\end{lstlisting}
+\end{ocaml}
 
 \section{The \code{Xmpp} module}
 This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in \ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
@@ -488,15 +493,17 @@ There is conceptually a mapping from user to their roster. I found it useful to 
 
 I represented \code{<item>} records, in-memory, as follows:
 
-\begin{lstlisting}[language=ml]
-  type item = {
-    jid     : string;      (* Contact's Jabber ID                       *)
-    name    : string;      (* Human-friendly name of contact            *)
-    recv_ok : bool;        (* OK to receive presence from this contact? *)
-    send_ok : bool;        (* OK to send presence to this contact?      *)
-    groups  : string list; (* Membership of contact in groups           *)
-  }
-\end{lstlisting}
+\begin{minipage}{\linewidth}
+  \begin{ocaml}
+    type item = {
+      jid     : string;        (* Contact's Jabber ID                       *)
+      name    : string;        (* Human-friendly name of contact            *)
+      recv_ok : bool;          (* OK to receive presence from this contact? *)
+      send_ok : bool;          (* OK to send presence to this contact?      *)
+      groups  : string list; (* Membership of contact in groups           *)
+    }
+  \end{ocaml}
+\end{minipage}
 
 This is almost a direct XML-to-OCaml translation of XMPP's \code{<item>} element, the main difference being my treatment of the \code{subscription} attribute. I felt that the \code{subscription} attribute as \code{none}, \code{from}, \code{to} or \code{both} was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: \code{recv_ok} (activated by \code{to} and \code{both}) and \code{send_ok} (activated by \code{from} and \code{both}). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via \code{send_ok}, rather than mentally decrypting `to' or `from'. [as for groups, I had to abandon them because of time]
 
@@ -504,7 +511,7 @@ Rosters are managed through the \code{Roster} sub-module. After authenticating a
 
 \code{Roster.load_from_storage} uses Angstrom parsers and the high-level \code{xml_node} interface to load the roster file into memory. The only part of this that is slightly interesting is \code{item_of_xml}, which constructs an item record from what should be an \code{<item>} XML node:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let item_of_xml =
   let open Xml.Check in
   tag "item" *> attr "jid" >>= fun jid ->
@@ -518,7 +525,7 @@ let item_of_xml =
       | _ -> fail "Unknown subscription type" ) >>=
   fun (recv_ok,send_ok) ->
     pure { jid; name; recv_ok; send_ok; groups=[] }
-\end{lstlisting}
+\end{ocaml}
 
 This demonstrates the utility of the \code{xml_node} matchers discussed in \ref{sec:matchers}. This function treats the absence of a \code{subscription} attribute as equivalent to \code{subscription="none"} (hence the use of \code{attr_opt}). \code{groups} is set to an empty value for the aforementioned reasons. There is also a corresponding \code{to_xml} function acting on \code{item} structures.
 
@@ -568,7 +575,7 @@ All of these stages make use of the \code{Result} monad to deal with errors. Err
 \subsubsection{Setup stage}
 After a client connects via TCP, the XML streams between it and the server are negotiated. The server expects the \code{<stream>} opening element from the client (after an XML declaration), and responds with its own. It looks like this:
 
-\begin{lstlisting}[language=ml]
+\begin{ocaml}
 let stream_handshake id =
   expect A.(P.xml_decl *> P.tag_open) >>| Xml.from_raw >>=
     Xml.Check.(qtag Xmpp.jstream "stream" *> attr "to") >>= fun my_addr ->
@@ -577,7 +584,7 @@ let stream_handshake id =
     "version", "1.0"; "from", my_addr; "id", id;
   ] []))
   in respond response; Ok (my_addr, id)
-\end{lstlisting}
+\end{ocaml}
 
 This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag and relevant data extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use. The function returns the information obtained: the stream ID and the server's Web address (\code{ptii.proj} is used throughout this project).
 
@@ -645,43 +652,30 @@ Outline:
 \chapter{Evaluation}
 All is outline:
 
-\section{Handshake; connect / disconnect}
-Show a session with Psi. Show results of simple multi-client messaging scenario (see round-robin under \ref{sec:messaging})
-
 \section{Presence notifications}
-These happen as clients connect and disconnect. I am not sure if it will be worth performance-testing this; I may just make sure this works as intended, by ensuring the flow of presence conforms to rosters when they are available.
-
-Have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Have a nontrivial subscription graph demonstrating \code{from}, \code{to}, \code{both}. Show that all 6 orders of connection (disconnect in reverse order for simplicity) produce the correct presence-notification patterns in accordance with the rosters.
+I have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. I have evidence that their consecutive connections produce the correct presence-notification patterns in accordance with their subscriptions to each other, though only in one of the six orders of connection. [should I bother being exhaustive with this?]
 
 \section{Roster management}
-This intersects with presence notifications; the only other thing to do here is check that it gives the correct response to the clients' initial get-roster requests. The lack of CRUD operations means there is little else to do.
+I have evidence that in the aforementioned connections the clients receive their rosters as expected. The lack of CRUD operations means there is little else to do.
 
-\section{Messaging between clients}
-I identified five main dimensions to parameterise messaging: Topology (who sends to whom; number and character of graph edges), Send Rate (how fast clients generate and send new messages), the number of messages each client sends, the number of clients (number of graph vertices) and the complexity of message bodies.
-
-Topology is far too variable to explore thoroughly; instead, I consider the following to be `interesting':
-
+\section{Handshake; connect / disconnect}
+I have screenshot and logs collectively showing the following:
 \begin{itemize}
-  \item Round-robin, for simplicity. Possibly too uninteresting or limited for serious timing, but serves to check if the server actually works. Client $i$ sends to client $i+1$, with wraparound for the last client.
-
-  \item Random: Each client picks a uniformly random recipient (excluding itself) for each message. `Surely', if averaged over (3? 5?) sample runs, it will be a good measure of throughput?
-
-  \item Complete: Everyone sends each message to everyone else.
+  \item Working handshake between Psi and server, plus appropriate \code{feature-not-implemented} response to the non-core features Psi requests
+  \item Conversation between Bob and Caroll via the Psi messaging interface and the \code{Client} module respectively
 \end{itemize}
 
-For performance testing and timing, I think I will go for Random topology; Complete might be useful when looking for a breaking point.
+\section{Messaging}
+\subsection{Throughput}
+My primary aim was to see how throughput of message delivery was affected by the number of connected clients. To do this, I somehow needed a throughput figure for different client counts. Thus, I investigated how throughput varied over time for different client counts, hoping to see the value stabilise.
 
-Number of clients is easy to vary, but I wonder if this could cause my client programs to break before the server does. Still, one graph: All other things fixed, number of clients vs. average throughput.
+To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers.
 
-Throughput estimated by taking reference time, proceeding with the messages and activity and then taking a final time measurement; divide delta by number of messages.
+The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
 
-Easiest if all clients connect first, then messaging proceeds, then all disconnect.
+\subsubsection{Throughput over time}
+\includegraphics{../transcripts/lipsum/5n5/5n5.png}
 
-Send rate: ``as fast as they can''. Nontrivial to ensure clients send at a particular rate per second; plus, this would really invalidate my primitive timing strategy as it would incorporate `too much' of the time clients don't spend doing anything. At least when ``as fast as possible'', this effect is minimised.
-
-Number of messages (per client): Don't see the point in systematically varying it; high enough to be meaningful, low enough for the test not to take forever.
-
-Complexity of message bodies: Unsure. Not as relevant as other concerns, since most XMPP messages won't consist of heavily nested XML. Keep as a constant `lorem ipsum' type paragraph.
 
 \chapter{Conclusion}
 

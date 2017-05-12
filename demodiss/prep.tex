@@ -15,17 +15,17 @@ The server needed to handle many clients at once, so I needed some form of multi
 
 \section{XML}
 XML is a notation for hierarchical trees, and an XML node \footnote{Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'.} has the form
-\begin{lstlisting}[language=xml]
+\begin{xml}
 <prefix:tag pre1:attr1="value1" pre2:attr2="value2" ... pren:attrn="valuen" >
    ... children ...
 </prefix:tag>
-\end{lstlisting}
+\end{xml}
 where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are absent from attributes, but they are used in a couple of important cases outlined below. I call the combination of prefix and identifier a \emph{qualified name}. This way, a node can be seen as
-\begin{lstlisting}[language=xml]
+\begin{xml}
 <qname qname1="value1" qname2="value2" ... qnamen="valuen" >
   ...
 </qname>
-\end{lstlisting}
+\end{xml}
 
 \subsection{Namespaces}
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.

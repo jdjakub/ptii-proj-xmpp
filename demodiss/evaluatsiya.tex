@@ -1,16 +1,18 @@
 \chapter{Evaluation}
 All is outline:
 
-\section{Handshake; connect / disconnect}
-Show a session with Psi. Show results of simple multi-client messaging scenario (see round-robin under \ref{sec:messaging})
-
 \section{Presence notifications}
-These happen as clients connect and disconnect. I am not sure if it will be worth performance-testing this; I may just make sure this works as intended, by ensuring the flow of presence conforms to rosters when they are available.
-
-Have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Have a nontrivial subscription graph demonstrating \code{from}, \code{to}, \code{both}. Show that all 6 orders of connection (disconnect in reverse order for simplicity) produce the correct presence-notification patterns in accordance with the rosters.
+I have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. I have evidence that their consecutive connections produce the correct presence-notification patterns in accordance with their subscriptions to each other, though only in one of the six orders of connection. [should I bother being exhaustive with this?]
 
 \section{Roster management}
-This intersects with presence notifications; the only other thing to do here is check that it gives the correct response to the clients' initial get-roster requests. The lack of CRUD operations means there is little else to do.
+I have evidence that in the aforementioned connections the clients receive their rosters as expected. The lack of CRUD operations means there is little else to do.
+
+\section{Handshake; connect / disconnect}
+I have screenshot and logs collectively showing the following:
+\begin{itemize}
+  \item Working handshake between Psi and server, plus appropriate \code{feature-not-implemented} response to the non-core features Psi requests
+  \item Conversation between Bob and Caroll via the Psi messaging interface and the \code{Client} module respectively
+\end{itemize}
 
 \section{Messaging}
 \subsection{Throughput}
@@ -21,3 +23,4 @@ To keep the client controller simple, I adopted following model: $n$ clients sen
 The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
 
 \subsubsection{Throughput over time}
+\includegraphics{../transcripts/lipsum/5n5/5n5.png}
