@@ -137,7 +137,7 @@ let inc_count () =
 
 let sv_start () =
   let per_client from_ie to_ie =
-    let respond str = (*print_endline ("[OUT]: " ^ str);*) output_string to_ie str; flush to_ie in
+    let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
     let expect = Xml.buffered_expect from_ie in
     let stream_handshake id =
@@ -341,5 +341,5 @@ let sampler () =
   done
 
 let () =
-  Thread.create sampler ();
+  (*Thread.create sampler ();*)
   sv_start ()

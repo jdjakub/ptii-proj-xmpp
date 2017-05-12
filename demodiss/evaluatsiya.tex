@@ -12,33 +12,6 @@ Have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. H
 \section{Roster management}
 This intersects with presence notifications; the only other thing to do here is check that it gives the correct response to the clients' initial get-roster requests. The lack of CRUD operations means there is little else to do.
 
-\section{Messaging between clients}
-I identified five main dimensions to parameterise messaging: Topology (who sends to whom; number and character of graph edges), Send Rate (how fast clients generate and send new messages), the number of messages each client sends, the number of clients (number of graph vertices) and the complexity of message bodies.
-
-Topology is far too variable to explore thoroughly; instead, I consider the following to be `interesting':
-
-\begin{itemize}
-  \item Round-robin, for simplicity. Possibly too uninteresting or limited for serious timing, but serves to check if the server actually works. Client $i$ sends to client $i+1$, with wraparound for the last client.
-
-  \item Random: Each client picks a uniformly random recipient (excluding itself) for each message. `Surely', if averaged over (3? 5?) sample runs, it will be a good measure of throughput?
-
-  \item Complete: Everyone sends each message to everyone else.
-\end{itemize}
-
-For performance testing and timing, I think I will go for Random topology; Complete might be useful when looking for a breaking point.
-
-Number of clients is easy to vary, but I wonder if this could cause my client programs to break before the server does. Still, one graph: All other things fixed, number of clients vs. average throughput.
-
-Throughput estimated by taking reference time, proceeding with the messages and activity and then taking a final time measurement; divide delta by number of messages.
-
-Easiest if all clients connect first, then messaging proceeds, then all disconnect.
-
-Send rate: ``as fast as they can''. Nontrivial to ensure clients send at a particular rate per second; plus, this would really invalidate my primitive timing strategy as it would incorporate `too much' of the time clients don't spend doing anything. At least when ``as fast as possible'', this effect is minimised.
-
-Number of messages (per client): Don't see the point in systematically varying it; high enough to be meaningful, low enough for the test not to take forever.
-
-Complexity of message bodies: Unsure. Not as relevant as other concerns, since most XMPP messages won't consist of heavily nested XML. Keep as a constant `lorem ipsum' type paragraph.
-
 \section{Messaging}
 \subsection{Throughput}
 My primary aim was to see how throughput of message delivery was affected by the number of connected clients. To do this, I somehow needed a throughput figure for different client counts. Thus, I investigated how throughput varied over time for different client counts, hoping to see the value stabilise.
@@ -46,3 +19,5 @@ My primary aim was to see how throughput of message delivery was affected by the
 To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers.
 
 The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
+
+\subsubsection{Throughput over time}

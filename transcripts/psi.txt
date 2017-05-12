@@ -1,0 +1,76 @@
+[IN]: <?xml version="1.0"?>
+<stream:stream xmlns:stream="http://etherx.jabber.org/streams" version="1.0" xmlns="jabber:client" to="ptii.proj" xml:lang="en" xmlns:xml="http://www.w3.org/XML/1998/namespace">
+[/IN]
+[OUT]: <stream:stream xmlns:stream="http://etherx.jabber.org/streams" xmlns="jabber:client" version="1.0" from="ptii.proj" id="random-id">
+[OUT]: <stream:features><mechanisms xmlns="urn:ietf:params:xml:ns:xmpp-sasl"><mechanism>PLAIN</mechanism><required/></mechanisms></stream:features>
+[IN]: <auth xmlns="urn:ietf:params:xml:ns:xmpp-sasl" mechanism="PLAIN">AGJvYgBwYXNzd29yZA==</auth>[/IN]
+USERNAME: bob
+PASSWORD: password
+[OUT]: <success xmlns="urn:ietf:params:xml:ns:xmpp-sasl"/>
+[ROSTER]: <roster>
+  <item jid="alice@ptii.proj" name="Alice" subscription="from" />
+  <item jid="caroll@ptii.proj" name="Caroll" subscription="both" />
+</roster>
+[/ROSTER]
+[IN]: <?xml version="1.0"?>
+<stream:stream xmlns:stream="http://etherx.jabber.org/streams" version="1.0" xmlns="jabber:client" to="ptii.proj" xml:lang="en" xmlns:xml="http://www.w3.org/XML/1998/namespace">
+[/IN]
+[OUT]: <stream:stream xmlns:stream="http://etherx.jabber.org/streams" xmlns="jabber:client" version="1.0" from="ptii.proj" id="different-id">
+[OUT]: <stream:features><bind xmlns="urn:ietf:params:xml:ns:xmpp-bind"><required/></bind></stream:features>
+[IN]: <iq type="set" id="bind_1">
+<bind xmlns="urn:ietf:params:xml:ns:xmpp-bind">
+<resource>eduroam-jdj27-18f441-1</resource>
+</bind>
+</iq>
+[/IN]
+[OUT]: <iq id="bind_1" type="result"><bind xmlns="urn:ietf:params:xml:ns:xmpp-bind"><jid>bob@ptii.proj/eduroam-jdj27-18f441-1</jid></bind></iq>
+[IN]: <iq xmlns="jabber:client" type="set" id="aab8a">
+<session xmlns="urn:ietf:params:xml:ns:xmpp-session"/>
+</iq>
+[/IN]
+[OUT]: <iq type="result" id="aab8a"/>
+[IN]: <iq xmlns="jabber:client" type="get" id="aab9a">
+<query xmlns="jabber:iq:roster"/>
+</iq>
+[/IN]
+[OUT]: <iq type="result" id="aab9a"><query xmlns="jabber:iq:roster"><item jid="alice@ptii.proj" name="Alice" subscription="from"/><item jid="caroll@ptii.proj" name="Caroll" subscription="both"/></query></iq>
+[IN]: <presence xmlns="jabber:client">
+<priority>5</priority>
+<c xmlns="http://jabber.org/protocol/caps" node="http://psi-im.org/caps" ver="caps-b75d8d2b25" ext="ca cs ep-notify-2 html"/>
+</presence>
+[/IN]
+[OUT]: <presence from="bob@ptii.proj" to="bob@ptii.proj/eduroam-jdj27-18f441-1"><priority>5</priority><c xmlns="http://jabber.org/protocol/caps" node="http://psi-im.org/caps" ver="caps-b75d8d2b25" ext="ca cs ep-notify-2 html"/></presence>
+[IN]: <iq xmlns="jabber:client" type="get" to="bob@ptii.proj/eduroam-jdj27-18f441-1" id="aabba">
+<query xmlns="http://jabber.org/protocol/disco#info" node="http://psi-im.org/caps#ca"/>
+</iq>
+<iq xmlns="jabber:client" type="get" id="aabca">
+<query xmlns="jabber:iq:private">
+<storage xmlns="storage:bookmarks"/>
+</query>
+</iq>
+<iq xmlns="jabber:client" type="get" to="bob@ptii.proj" id="aabda">
+<vCard xmlns="vcard-temp"/>
+</iq>
+<iq xmlns="jabber:client" type="get" to="ptii.proj" id="aabea">
+<query xmlns="http://jabbe[/IN]
+[OUT]: <iq type="error" id="aabba"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
+[IN]: r.org/protocol/disco#info"/>
+</iq>
+[/IN]
+[OUT]: <iq type="error" id="aabca"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
+[OUT]: <iq type="error" id="aabda"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
+[OUT]: <iq type="error" id="aabea"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
+[IN]: <iq xmlns="jabber:client" type="get" to="bob@ptii.proj/eduroam-jdj27-18f441-1" id="aabfa">
+<query xmlns="jabber:iq:version"/>
+</iq>
+[/IN]
+[OUT]: <iq type="error" id="aabfa"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
+[IN]: <iq xmlns="jabber:client" type="get" to="bob@ptii.proj" id="aac0a">
+<query xmlns="jabber:iq:version"/>
+</iq>
+<iq xmlns="jabber:client" type="get" to="bob@ptii.proj" id="aac1a">
+<vCard xmlns="vcard-temp"/>
+</iq>
+[/IN]
+[OUT]: <iq type="error" id="aac0a"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
+[OUT]: <iq type="error" id="aac1a"><error type="cancel"><feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/></error></iq>
