@@ -1,0 +1,60 @@
+\chapter{Preparation}
+For the bulk of the preparatory work, the clue was in the title: I needed to be familiar with OCaml and XMPP. This involved maintaining a basic level of competence with OCaml language features, as well as experience with the libraries and tools I was going to use; understanding of the basic concepts of XML, and which features are relevant to XMPP; then, the details of the XMPP protocol itself. Once I had a vision of what would be needed, I could design the general architecture of the server.
+
+\section{Starting point}
+
+\section{The OCaml language}
+\begin{itemize}
+  \item Statically typed, strong type system, functional with imperative features, object-oriented bits, small standard library
+  \item Already used it over summer with Angstrom, but at a basic level.
+  \item Unix networking functions
+  \item POSIX Threads library, concurrency
+  \item Basic cl/sv demos
+  \item Compilation, makefile
+\end{itemize}
+
+Objective-Caml, or OCaml, is a primarily functional language with imperative and object-oriented features. I had already used OCaml, to a basic extent, on an internship during the summer; this had given me some experience with the Angstrom parser combinator library. I referred to Internet resources and the \name{Real World OCaml} book to re-familiarise myself and fill the gaps in my knowledge.
+
+I surveyed the documentation for the \code{Unix} module, to remind myself of how the Sockets API operates. I put together a couple of small test servers and clients to verify I could use the networking functions from OCaml correctly. This also provided an opportunity to get used to the build system again.
+
+I also browsed the small standard library for data structure implementations. All of the basic ones exist, and more specialised versions are provided in external libraries should I need them.
+
+The server needed to handle many clients at once, so I needed some form of multitasking. OCaml offers two co-operative threading libraries, \code{Lwt} and \code{Async}, in addition to an interface to POSIX pre-emptive threads. When I later had to adapt my single-threaded code to serve multiple clients, I chose POSIX threads, since the pre-emptive multithreading approach was already familiar to me and I did not need to make serious modifications to the code I had already written.
+
+\section{XML}
+\begin{itemize}
+  \item Tree-structured data
+  \item spork from impl
+  \item language
+  \item encoding, schemas, validation, comments, ...
+  \item grammar
+\end{itemize}
+
+XML is a notation for hierarchical trees, and an XML node \footnote{Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'.} has the form
+\begin{lstlisting}[language=xml]
+<prefix:tag pre1:attr1="value1" pre2:attr2="value2" ... pren:attrn="valuen" >
+   ... children ...
+</prefix:tag>
+\end{lstlisting}
+where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are absent from attributes, but they are used in a couple of important cases outlined below. I call the combination of prefix and identifier a \emph{qualified name}. This way, a node can be seen as
+\begin{lstlisting}[language=xml]
+<qname qname1="value1" qname2="value2" ... qnamen="valuen" >
+  ...
+</qname>
+\end{lstlisting}
+
+Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.
+
+There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of.
+
+\section{The XMPP Protocol}
+\begin{itemize}
+  \item sources: RFC, book, Psi
+  \item strategy: breadth-first not depth-first
+  \item XML streams; errors
+  \item The handshake; authentication, encryption ...
+  \item roster (data structs; spork from impl)
+  \item Messaging and stanzas (data structs; threading)
+\end{itemize}
+
+\section{Requirements analysis}

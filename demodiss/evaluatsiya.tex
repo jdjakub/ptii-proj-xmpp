@@ -38,3 +38,11 @@ Send rate: ``as fast as they can''. Nontrivial to ensure clients send at a parti
 Number of messages (per client): Don't see the point in systematically varying it; high enough to be meaningful, low enough for the test not to take forever.
 
 Complexity of message bodies: Unsure. Not as relevant as other concerns, since most XMPP messages won't consist of heavily nested XML. Keep as a constant `lorem ipsum' type paragraph.
+
+\section{Messaging}
+\subsection{Throughput}
+My primary aim was to see how throughput of message delivery was affected by the number of connected clients. To do this, I somehow needed a throughput figure for different client counts. Thus, I investigated how throughput varied over time for different client counts, hoping to see the value stabilise.
+
+To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers.
+
+The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
