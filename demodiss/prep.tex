@@ -35,17 +35,20 @@ There are other special `attributes' in this fashion, such as \code{xml:lang}, w
 \subsection{Formal grammar for XML}
 I developed the following informal Context-Free Grammar for this subset of XML, to guide my implementation of the parser:
 
-\begin{lstlisting}
-qname    ::= (ident ':')? ident
-attr_val ::= qname '=' '"' string '"'
-branch   ::= '<' qname attr_val* tag_end
-tag_end  ::= '/>'
-           | '>' node '</' qname '>'
+\begin{minipage}{\linewidth}
+  \begin{lstlisting}
+  qname    ::= (ident ':')? ident
+  attr_val ::= qname '=' '"' string '"'
+  branch   ::= '<' qname attr_val* tag_end
+  tag_end  ::= '/>'
+             | '>' node '</' qname '>'
 
-node     ::= branch
-           | text
+  node  ::= branch
+         | text
 
-\end{lstlisting}
+  \end{lstlisting}
+\end{minipage}
+
 In the CFG, \code{ident} denotes an identifier, \code{string} represents a text string containing appropriately escaped quote characters, and \code{text} refers to free text not containing angle bracket characters. This was strictly a guide, to give the general shape of the syntax. Obviously XML parsing is not \emph{truly} context-free as the closing tag must match the opening tag; nevertheless, such a grammar is still useful.
 
 \section{The XMPP Protocol}
@@ -67,6 +70,12 @@ To help guide me through the relevant sections of RFC 6120, I downloaded the XMP
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
 \subsection{Handshake and setup considerations}
+Outline:
+\begin{itemize}
+  \item Exposition of Section \ref{sec:handshake-impl}; the basic steps in setting up an XMPP session
+  \item Not bothering with authentication, encryption ... all extraneous and viewed as extensions.
+  \item Stream errors and disconnection
+\end{itemize}
 
 \subsection{The roster}
 `Roster' is simply XMPP jargon for what is functionally a contact list. XMPP represents a user's contacts as a list of \code{<item>} elements. Each item describes another user, and the subscription status between the two users.
@@ -86,8 +95,20 @@ The subscribers of user A are recorded in the XMPP \code{<item>} elements as \co
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
 [but --- no need to enforce, since I abandoned CRUD operations and can trust my own files to be consistent]
-However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing it before messaging would be too time consuming. The rosters are determined by the content of the roster files which I ensure are consistent myself, and since they do not change during runtime or get updated by the server, this consistency is maintained.
+However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters are determined by the content of the roster files which I ensure are consistent myself, and since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 \subsection{Messaging and stanzas}
+Outline:
+\begin{itemize}
+  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
+  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
+  \item Sticking to single-server model; i.e. no federation (``yet'')
+  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
+\end{itemize}
 
 \subsection{Multi-client architecture}
+This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as
+\begin{itemize}
+  \item Developed first for a single client; multiple clients perform the same actions specified by the same function, just in  different thread
+  \item Design of the testing clients; explaining the analogous Section \ref{sec:mod-client} in Implementation, as well as the test rig
+\end{itemize}
