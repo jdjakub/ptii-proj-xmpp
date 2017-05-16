@@ -78,34 +78,26 @@ module Dispatch = struct
 end
 
 module Driver = struct
-  (* Code in this module is copied and adapted from
-  https://github.com/lucasaiu/ocaml/blob/master/otherlibs/unix/unix.ml *)
-
   open Unix
 
-  (* Copied from above *)
-  let rec accept_non_intr s =
-    try accept s
-    with Unix_error (EINTR, _, _) -> accept_non_intr s
-
-  (* Copied and adapted to spawn threads instead of processes *)
-  let establish_server server_fun sockaddr =
-    let sock =
-      socket (domain_of_sockaddr sockaddr) SOCK_STREAM 0 in
-    setsockopt sock SO_REUSEADDR true;
-    bind sock sockaddr;
-    listen sock 5;
+  (* Version of Unix.establish_server, spawning threads instead of processes *)
+  let establish_server per_client listen_addr backlog =
+    let s_listen = socket PF_INET SOCK_STREAM 0 in
+    setsockopt s_listen SO_REUSEADDR true; (* required for quick restart of server *)
+    bind s_listen listen_addr;
+    listen s_listen backlog;
     while true do
-      let (s, caller) = accept_non_intr sock in
-      let inchan = in_channel_of_descr s in
-      let outchan = out_channel_of_descr s in
+      let s_client, _ = accept s_listen in
+      let inch = in_channel_of_descr s_client in
+      let ouch = out_channel_of_descr s_client in
       let server_fun_with_cleanup (inc,outc) =
-        let result = server_fun inc outc in
-        close s; match result with
+        let result = per_client inc outc in
+        close s_client;
+        match result with
         | Ok _ -> ()
         | Error err -> failwith err
       in
-      Thread.create server_fun_with_cleanup (inchan,outchan);
+      Thread.create server_fun_with_cleanup (inch,ouch);
     done
 end
 
@@ -137,7 +129,7 @@ let inc_count () =
 
 let sv_start () =
   let per_client from_ie to_ie =
-    let respond str = print_endline ("[OUT]: " ^ str); output_string to_ie str; flush to_ie in
+    let respond str = (*print_endline ("[OUT]: " ^ str);*) output_string to_ie str; flush to_ie in
     let respond_tree xml = respond (Raw.to_string xml) in
     let expect = Xml.buffered_expect from_ie in
     let stream_handshake id =
@@ -313,7 +305,7 @@ let sv_start () =
     | Error err -> respond "</stream:stream>"; Error err
 
   in
-  Driver.(establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)))
+  Driver.establish_server per_client Unix.(ADDR_INET (inet_addr_loopback,5222)) 5
 
 let sampler () =
   let time () = (Unix.gettimeofday (), Sys.time ()) in
@@ -341,5 +333,5 @@ let sampler () =
   done
 
 let () =
-  (*Thread.create sampler ();*)
+  Thread.create sampler ();
   sv_start ()
