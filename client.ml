@@ -81,7 +81,7 @@ object (self)
       ])
 
   method message_t recpt body =
-    self#message recpt Raw.(text body)
+    self#message recpt Raw.(xml_n "body" [] [text body])
 
   method disconnect =
     self#respond_tree Raw.(xml_n "presence" [ "type", "unavailable" ] []);
