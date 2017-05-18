@@ -219,14 +219,14 @@ tag "iq" *> attv "type" "get" *> attr "id" >>= fun id ->
 \end{ocaml}
 
 This would succeed on the XML node
-\begin{lstlisting}[language=xml]
+\begin{xml}
 <foo:iq type="get" id="123" > ... </foo:iq>.
-\end{lstlisting}
+\end{xml}
 
 I implemented the usual \code{>>=} for `bind', \code{*>} for `sequence', \code{<|>} for `alternative' and the direction-reversed versions where needed.
 
 \begin{itemize}
-  \item \code{(f >>= fun x -> g) xml} first performs \code{f xml}; if successful, it binds the result value to \code{x} and returns \code{g xml}. Otherwise, if \code{f xml} fails, it aborts with the error value.
+  \item \code{(f >>= fun x -> g) xml} first performs \code{f xml}; if successful, it binds the result value to \code{x} and returns \code{g xml}.\footnote{In other words, \code{(f >>= g) xml} evaluates to \code{g xml x} if \code{f xml} results in \code{x} --- I only explained it with an explicit binder because that is how it tends to be used.} Otherwise, if \code{f xml} fails, it aborts with the error value.
 
   \item \code{(f *> g) xml} is like \code{>>=} but discards the result, binding no values. In this sense, it sequences a `check' with a check or match, although this is a conceptual distinction that is not enforced in the code.
 
@@ -259,7 +259,7 @@ expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
 \end{ocaml}
 
 \section{The \code{Xmpp} module}
-This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in \ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
+This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in Section~\ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
 
 \subsection{The Roster}
 There is conceptually a mapping from user to their roster. I found it useful to view a user's roster as another mapping, from a contact's JID to their \code{<item>} record. The user-roster association is a global \code{Map} data structure, and the roster itself is another \code{Map}.
@@ -302,18 +302,44 @@ let item_of_xml =
 
 This demonstrates the utility of the \code{xml_node} matchers discussed in \ref{sec:matchers}. This function treats the absence of a \code{subscription} attribute as equivalent to \code{subscription="none"} (hence the use of \code{attr_opt}). \code{groups} is set to an empty value for the aforementioned reasons. There is also a corresponding \code{to_xml} function acting on \code{item} structures.
 
-[abandonment of CRUD, view towards testing]
+There is one final thing to mention about how rosters are handled: the function \code{Roster.get_subs_of} returns a list of all the subscribers of a user, filtered from their full roster. If their roster does not exist, a value of \code{None} is returned instead, rather than an error. When this function is used to broadcast a client's initial presence, the absence of a roster is treated as a subscription to and from everybody currently online. This was included as a default option to make bulk testing easier, as it precludes the need to maintain lots of identical roster files that achieve the same thing.
 
 \subsection{The \code{Stanza} module}
-Outline:
+The main purpose of this module is to make the common task of handling stanzas easier, by bringing some of the semantics of XMPP stanzas into the OCaml type level. Although there are three types of stanzas in XMPP, I only found it necessary to give \code{iq} stanzas this treatment, since they make use of request IDs and have structure conditional on their attributes. The \code{message} and \code{presence} stanzas only required the checking of attributes and forwarding, so they do not feature here.
 
-\begin{itemize}
-  \item Meant to bring stanza formats into the type level
+I defined the type \code{Iq.t} as a combination of request ID and \code{iq_type}. \code{iq_type} incorporates the \code{type} attribute of the \code{iq} stanza and the various possibilities for the children of the node:
 
-  \item \code{Iq} sub-module has \code{Iq.t} (record with request ID and further data dependent on the \code{type} attribute) and \code{Iq.of_xml}
+\begin{ocaml}
+  type query = Xml.xml_node
+  type iq_type =
+  | Get of query
+  | Set of query
+  | Result of query option
+  | Error of query option * error
+\end{ocaml}
 
-  \item Did not extend with \code{Message} / \code{Presence} sub-modules since they are not as general or varied as \code{Iq}; managed fine without type-level message or presence stanzas
-\end{itemize}
+XMPP specifies that \code{type="get"} or \code{"set"} means the contents are a query for the information. \code{result} \code{iq}s can be empty (as acknowledgements of success) and likewise with errors, and this is mapped to the OCaml \code{option} type.
+
+The \code{of_xml} function converts XML to an \code{Iq.t}, again using the matchers:
+
+\begin{ocaml}
+let of_xml =
+let open Xml.Check in
+  tag "iq" *> attr "id" >>= fun req_id ->
+    attr "type" >>= (function
+    | "get" -> child >>| fun ch -> Get ch
+    | "set" -> child >>| fun ch -> Set ch
+    | "result" -> fun xml -> Ok (Result (Rresult.R.to_option (child xml)))
+    | "error" -> fun xml -> Ok (Error (Rresult.R.to_option (child xml),"?"))
+    | _ -> fail "bad-request") >>| fun iq_type -> { req_id; iq_type }
+\end{ocaml}
+
+The module gives rise to the following idiom that is employed for received \code{iq} stanzas, taking advantage of OCaml's pattern matching on function arguments:
+
+\begin{ocaml}
+  expect P.tree >>| Xml.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+  fun { req_id; iq_type=(Get query) } -> ...
+\end{ocaml}
 
 \section{The server program}
 \subsection{Work-dispatching machinery (the \code{Dispatch} module)}\label{sec:mod-dispatch}
@@ -334,6 +360,9 @@ On the server, per client, post-handshake; outline:
 
   \item \code{client_disconnected} sets the `finished' flag and signals, then removes client from the global map.
 \end{itemize}
+This module concerns itself with providing a means to push stanzas for delivery to work queues, and to retrieve them from said work queues, concurrently.
+
+On a per-client basis, after handshaking (discussed later), the server sets up a worker thread to forward stanzas to the client. The worker obtains stanzas by means of \code{dequeue_work} from the work queue created by the \code{client_connected} function. The 
 
 \subsection{Server operation}
 The server program uses a simple `driver' to spawn off a thread each time a client connects. The function \code{sv_start ()} simply performs \code{Driver.establish_server} on the local loopback address, passing in the function \code{per_client}.

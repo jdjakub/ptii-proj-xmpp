@@ -59,7 +59,7 @@ Examination:        & \bf Computer Science Tripos -- Part II, July 2017  \\
 Word Count:         & \bf About 7000\footnotemark[1]
                       (well less than the 12000 limit)  \\
 Project Originator: & Dr Anil Madhavapeddy \& Dr Richard Mortier           \\
-Supervisor:         & Richard Mortier                    \\
+Supervisor:         & Dr Richard Mortier                    \\
 \end{tabular}
 }
 \footnotetext[1]{This word count was not yet computed
@@ -675,53 +675,47 @@ I have screenshot and logs collectively showing the following:
 \subsection{Throughput}
 My primary aim was to see how throughput of message delivery was affected by the number of connected clients. To do this, I somehow needed a throughput figure for different client counts. Thus, I investigated how throughput varied over time for different client counts, hoping to see the value stabilise.
 
-To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers.
+To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers. This meant the figures would incorporate the buffering behaviour of the server and complete the worst-case behaviour under constant requests from clients.
 
 The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
 
-\subsubsection{Throughput over time}
-The characteristic in Figure~\ref{fig:5n5} shows a normal characteristic which stabilises.
+\subsubsection{Procedure}
+I began by observing the time-throughput curve for $n=20$, 40, and 60. For $n=70$ and above, the server demonstrated its breaking point by causing itself and the other applications on my computer to hang and require a forced reboot. I stopped there and started filling in the gaps between the other values; unfortunately, time did not premit further investigation of this issue.
+
+As I ran the server five times for each value of $n$, I noticed that the performance of each repeat tended to be lower than those before it, and became more chaotic the longer it ran. This was unexpected; each test was done on a fresh, restarted instance of the server binary.
+
+I hypothesised that these effects were due to the heating effect of the tests on my MacBook, which does not have a fan; to cool down, the CPU is throttled, necessarily reducing performance. I was performing the test runs in quick succession, one after the other, hence only the first instance would not suffer from prior heating.
+
+To see if this was the case, I considered the most wildly fluctuating of the graphs, $n=20$, and repeated the five runs, this time allowing my machine to cool before each. The results (Figure~\ref{fig:20hotcold}) stood in stark contrast to the `hot' runs, with much less variation among the curves and a largely reduced downward trend.
+
+I then ran hot/cold tests for $n=5$ with a very small message size, to give the server every opportunity for peak performance. These results were similar (Figure~\ref{fig:5hotcold}), and I made sure to perform the main throughput tests with cooling-off periods.
+
 \begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/5n5/graph.png}
-  \caption{5 send-receive pairs.}
-  \label{fig:5n5}
+  \includegraphics[width=0.5\textwidth]{../transcripts/lipsum/20n20/hot/hot.png}
+  \includegraphics[width=0.5\textwidth]{../transcripts/lipsum/20n20/cold/cold.png}
+  \caption{Effect of heating on throughput behaviour.}
+  \label{fig:20hotcold}
 \end{figure}
 
-In Figure~\ref{fig:10n10}, at 10 client pairs, there is an odd dip at around $t=300s$.
 \begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/10n10/graph.png}
-  \caption{10 send-receive pairs.}
-  \label{fig:10n10}
+  \includegraphics[width=0.5\textwidth]{../transcripts/hi/5n5/hot/hot.png}
+  \includegraphics[width=0.5\textwidth]{../transcripts/hi/5n5/cold/cold.png}
+  \caption{Further demonstration of the heating effect.}
+  \label{fig:5hotcold}
 \end{figure}
 
-From 15 to 20 (Figure~\ref{fig:15n20}), we see much more chaotic behaviour from $t=300s$ that does not seem to stabilise:
-\begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/15n15/graph.png}
+\subsubsection{Results and comments}
+I obtained time-throughput characteristics for $n=5$, 10, 20, 30, 40 and 60. Overall, they remained reasonably stable after $t=100s$, after an initial transient with higher peak value.
 
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/20n20/graph.png}
-  \caption{20 send-receive pairs.}
-  \label{fig:15n20}
-\end{figure}
+Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns --- see Appendix~\ref{apdx:graphs} for details.
 
-Stabilisation begins to return at 25 and beyond in Figure~\ref{fig:lots}. (Supposed to show 25-60)
 \begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/25n25/graph.png}
-
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/graph.png}
-  \caption{30 send-receive pairs.}
-  \label{fig:lots}
-\end{figure}
-\begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/40n40/graph.png}
-\end{figure}
-\begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/50n50/graph.png}
-\end{figure}
-\begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/60n60/graph.png}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold.png}
+  \caption{Graph of the 5 repeats performed for $n=30$, showing decay from peak and gradual stabilisation.}
+  \label{fig:example-chstic}
 \end{figure}
 
-I took the average of throughput samples in the stable-looking regions (or, for the chaotic graphs, the relatively stable-looking regions) and took the values as the ``operating throughputs'' of my server for these parameters. From this I obtained the indication of operating throughput as a function of client load shown in Figure~\ref{fig:summary}.
+As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated as the box-plots in Figure~\ref{fig:summary}.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/throughp_clients.png}
