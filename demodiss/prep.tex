@@ -54,23 +54,46 @@ In the CFG, \code{ident} denotes an identifier, \code{string} represents a text 
 \section{The XMPP Protocol}
 
 \subsection{Understanding the protocol}
-The most comprehensive and in-depth resource on XMPP is the specification, RFC 6120. My first attempt at understanding XMPP involved trying to read this document. Since at first all I wanted was a broad picture, I found the book \name{XMPP: The Definitive Guide} to be a more appropriate resource.
+The most comprehensive and in-depth resource on XMPP is the core specification, RFC 6120. My first attempt at understanding XMPP involved trying to read this document. Since at first all I wanted was a broad picture, I found the book \name{XMPP: The Definitive Guide} to be a more appropriate resource.
 
-Once I had a broad overarching understanding, the only place I could start with was the communications setup and handshake. The \name{Definitive Guide} was helpful, but for the details I had to delve into the RFC. I quickly realised that XMPP is a very large and complex protocol, and I would have to prioritise the aspects that would get me to a message-processing stage as fast as possible. In other words, I needed to adopt a breadth-first, and not depth-first, approach to both understanding XMPP and implementing a server for it. Thus, for each feature of the protocol, I pressed ahead with the core behaviour first. The specification contains a rather overwhelming range of error cases and caveats for most aspects of XMPP, and I would treat these details as extension work for any remaining time at the end.
+Once I had a broad overarching understanding, the only place I could start with was the communications setup and handshake. The \name{Definitive Guide} was helpful, but for the details I had to delve into the RFC. I quickly realised that XMPP is a very large and complex protocol, and I would have to prioritise the aspects that would get me to a message-processing stage (detailed in XMPP-IM, RFC 6121) as fast as possible. In other words, I needed to adopt a breadth-first, and not depth-first, approach to both understanding XMPP and implementing a server for it. Thus, for each feature of the protocol, I pressed ahead with the core behaviour first. The specification contains a rather overwhelming range of error cases and caveats for most aspects of XMPP, and I treated these details as extension work for any remaining time at the end.
 
-To help guide me through the relevant sections of RFC 6120, I downloaded the XMPP client program Psi\cite{Psi-IM} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
+To help guide me through the relevant sections of RFC 6120 and 6121, I downloaded the XMPP client program Psi\cite{Psi-IM} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
 
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
 \subsection{Handshake and setup considerations}
+Communication in XMPP revolves around sending stanzas over XML streams. After TCP connection, the client and server need to set up their streams and negotiate various features before they can begin exchanging stanzas. This is known as the handshake. I see the handshake as consisting of the following steps:
+\begin{enumerate}
+  \item Set up the streams. The client and server exchange \code{<stream>} opening tags containing the server name, protocol version (1.0) and a stream ID for the client to hold onto.
+
+  \item Offer the list of stream features that the client can choose from. These are the subject of numerous extensions and concern topics such as verified authentication and encryption of the streams. The only capability \emph{required} by the specification, and by the Psi client, is to have some form of authentication mechanism. The simplest way to do this is to offer authentication via the \code{PLAIN} mechanism, receiving the client's username and password in base64-encoded plain text. This can then be accepted by default. Specific user accounts and secure authentication are beyond the scope of this project.
+
+  \item Respond with `success' to client. Restart the stream anew by handshaking again\footnote{This is mainly intended for encrypted connections and suchlike, so that the entire stream can be considered secured; nevertheless, it is still required in other cases.}. Offer features again, this time consisting of the required process of ``resource binding''.
+
+  \emph{Resources} in XMPP allow the same user to communicate on different devices; they are appended to a client's Jabber ID, or JID\footnote{XMPP grew out of the older Jabber protocol, and users are identified by their JIDs. A JID looks very similar to an e-mail address, consisting of a username and the name of the server on which they reside: \code{username@server.net}.}, to make a \emph{full JID}. For example, the user \code{alice} could possess two full JIDs \code{alice@server.net/laptop} and \code{alice@server.net/phone}. The resource name is suggested by the client and either accepted or modified (in the case of clashes) by the server, which returns the full JID to the client. Resource binding is accomplished by \code{iq} (Information Query) stanzas.
+
+  \item Expect an \code{iq} `set' session request, to formally establish the session, and respond with an empty \code{iq} signalling success.
+
+  \item Expect an \code{iq} `get' request for the roster (Section~\ref{sec:prep-roster}), respond with client's roster.
+
+  \item Expect an initial \code{presence} stanza, meaning ``client online''. Echo this back to the client, with its full JID in the \code{from} attribute, and forward to its subscribers.
+\end{enumerate}
+
+Once these steps are completed, ordinary \code{message}, \code{presence} and \code{iq} stanzas can be exchanged.
+
+If any errors occur at this stage, the stream is terminated by sending a stream error and the closing \close{</stream>} tag. However, due to the number of varied errors that can occur, graceful termination is an unhelpful goal to prioritise and simply closing the \code{<stream>} element will suffice for my purposes.
+
+\subsection{Messaging and stanzas}
 Outline:
 \begin{itemize}
-  \item Exposition of Section \ref{sec:handshake-impl}; the basic steps in setting up an XMPP session
-  \item Not bothering with authentication, encryption ... all extraneous and viewed as extensions.
-  \item Stream errors and disconnection
+  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
+  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
+  \item Sticking to single-server model; i.e. no federation (``yet'')
+  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
 \end{itemize}
 
-\subsection{The roster}
+\subsection{The roster}\label{sec:prep-roster}
 `Roster' is simply XMPP jargon for what is functionally a contact list. XMPP represents a user's contacts as a list of \code{<item>} elements. Each item describes another user, and the subscription status between the two users.
 
 The concept of subscription has design ramifications worth discussing. The word is used in its usual sense: if user A is subscribed to user B, then A will receive updates about B's presence on the network. This is a \emph{directed} relation; B might not be subscribed to A. Thus, conceptually, subscription is a directed graph that needs to be stored on disk as well as in memory. There is, then, a choice of how to represent this graph.
@@ -87,17 +110,7 @@ The subscribers of user A are recorded in the XMPP \code{<item>} elements as \co
 
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
-[but --- no need to enforce, since I abandoned CRUD operations and can trust my own files to be consistent]
-However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters are determined by the content of the roster files which I ensure are consistent myself, and since they do not change during runtime or get updated by the server, this consistency is maintained.
-
-\subsection{Messaging and stanzas}
-Outline:
-\begin{itemize}
-  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
-  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
-  \item Sticking to single-server model; i.e. no federation (``yet'')
-  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
-\end{itemize}
+However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 \subsection{Multi-client architecture}
 This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as

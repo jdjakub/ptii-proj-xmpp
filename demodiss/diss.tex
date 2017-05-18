@@ -78,9 +78,7 @@ A server, implementing basic XMPP functionality, including message forwarding to
 
 \section*{Special Difficulties}
 
-None? (I feel like there was a primary special difficulty, namely that XMPP is a huge and complicated protocol and that the RFCs are tedious to get through.)
-
-Interesting: \textit{``It is quite in order for the Proforma page to point out \textbf{how ambitious} the original aims were, and how the work completed represents the triumphant consequence of \textbf{considerable effort against a background of unpredictable disasters}. The substantiation of these claims will follow in the rest of the dissertation.''} -- Pink Book
+No special difficulties.
 
 \newpage
 \section*{Declaration}
@@ -140,7 +138,7 @@ where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are
 \subsection{Namespaces}\label{sec:namespaces}
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.
 
-There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas or comments / \code{CDATA} sections.
+There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project, and did not investigate them. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas or comments / \code{CDATA} sections.
 
 \subsection{Formal grammar for XML}
 I developed the following informal Context-Free Grammar for this subset of XML, to guide my implementation of the parser:
@@ -164,23 +162,48 @@ In the CFG, \code{ident} denotes an identifier, \code{string} represents a text 
 \section{The XMPP Protocol}
 
 \subsection{Understanding the protocol}
-The most comprehensive and in-depth resource on XMPP is the specification, RFC 6120. My first attempt at understanding XMPP involved trying to read this document. Since at first all I wanted was a broad picture, I found the book \name{XMPP: The Definitive Guide} to be a more appropriate resource.
+The most comprehensive and in-depth resource on XMPP is the core specification, RFC 6120. My first attempt at understanding XMPP involved trying to read this document. Since at first all I wanted was a broad picture, I found the book \name{XMPP: The Definitive Guide} to be a more appropriate resource.
 
-Once I had a broad overarching understanding, the only place I could start with was the communications setup and handshake. The \name{Definitive Guide} was helpful, but for the details I had to delve into the RFC. I quickly realised that XMPP is a very large and complex protocol, and I would have to prioritise the aspects that would get me to a message-processing stage as fast as possible. In other words, I needed to adopt a breadth-first, and not depth-first, approach to both understanding XMPP and implementing a server for it. Thus, for each feature of the protocol, I pressed ahead with the core behaviour first. The specification contains a rather overwhelming range of error cases and caveats for most aspects of XMPP, and I would treat these details as extension work for any remaining time at the end.
+Once I had a broad overarching understanding, the only place I could start with was the communications setup and handshake. The \name{Definitive Guide} was helpful, but for the details I had to delve into the RFC. I quickly realised that XMPP is a very large and complex protocol, and I would have to prioritise the aspects that would get me to a message-processing stage (detailed in XMPP-IM, RFC 6121) as fast as possible. In other words, I needed to adopt a breadth-first, and not depth-first, approach to both understanding XMPP and implementing a server for it. Thus, for each feature of the protocol, I pressed ahead with the core behaviour first. The specification contains a rather overwhelming range of error cases and caveats for most aspects of XMPP, and I treated these details as extension work for any remaining time at the end.
 
-To help guide me through the relevant sections of RFC 6120, I downloaded the XMPP client program Psi\cite{Psi-IM} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
+To help guide me through the relevant sections of RFC 6120 and 6121, I downloaded the XMPP client program Psi\cite{Psi-IM} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
 
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
 \subsection{Handshake and setup considerations}
 Outline:
 \begin{itemize}
-  \item Exposition of Section \ref{sec:server-setup}; the basic steps in setting up an XMPP session
-  \item Not bothering with authentication, encryption ... all extraneous and viewed as extensions.
   \item Stream errors and disconnection
 \end{itemize}
+Communication in XMPP revolves around sending stanzas over XML streams. After TCP connection, the client and server need to set up their streams and negotiate various features before they can begin exchanging stanzas. This is known as the handshake. I see the handshake as consisting of the following steps:
+\begin{enumerate}
+  \item Set up the streams. The client and server exchange \code{<stream>} opening tags containing the server name, protocol version (1.0) and a stream ID for the client to hold onto.
 
-\subsection{The roster}
+  \item Offer the list of stream features that the client can choose from. These are the subject of numerous extensions and concern topics such as verified authentication and encryption of the streams. The only capability \emph{required} by the specification, and by the Psi client, is to have some form of authentication mechanism. The simplest way to do this is to offer authentication via the \code{PLAIN} mechanism, receiving the client's username and password in base64-encoded plain text. This can then be accepted by default. Specific user accounts and secure authentication are beyond the scope of this project.
+
+  \item Respond with `success' to client. Restart the stream anew by handshaking again\footnote{This is mainly intended for encrypted connections and suchlike, so that the entire stream can be considered secured; nevertheless, it is still required in other cases.}. Offer features again, this time consisting of the required process of ``resource binding''.
+
+  \emph{Resources} in XMPP allow the same user to communicate on different devices; they are appended to a client's Jabber ID, or JID\footnote{XMPP grew out of the older Jabber protocol, and users are identified by their JIDs. A JID looks very similar to an e-mail address, consisting of a username and the name of the server on which they reside: \code{username@server.net}.}, to make a ``full JID''. For example, the user \code{alice} could possess two full JIDs \code{alice@server.net/laptop} and \code{alice@server.net/phone}. The resource name is suggested by the client and either accepted or modified (in the case of clashes) by the server, which returns the full JID to the client. Resource binding is accomplished by \code{iq} (Information Query) stanzas.
+
+  \item Expect an \code{<iq>} `set' session request, to formally establish the session, and respond with an empty \code{<iq>} signalling success.
+
+  \item Expect an \code{iq} `get' request for the roster (Section~\ref{sec:prep-roster}), respond with client's roster.
+
+  \item Expect an initial \code{presence} stanza , meaning ``client online''. Echo this back to the client, with its full JID in the \code{from} attribute, and forward to its subscribers.
+\end{enumerate}
+
+Once these steps are completed, ordinary \code{message}, \code{presence} and \code{iq} stanzas can be exchanged.
+
+\subsection{Messaging and stanzas}
+Outline:
+\begin{itemize}
+  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
+  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
+  \item Sticking to single-server model; i.e. no federation (``yet'')
+  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
+\end{itemize}
+
+\subsection{The roster}\label{sec:prep-roster}
 `Roster' is simply XMPP jargon for what is functionally a contact list. XMPP represents a user's contacts as a list of \code{<item>} elements. Each item describes another user, and the subscription status between the two users.
 
 The concept of subscription has design ramifications worth discussing. The word is used in its usual sense: if user A is subscribed to user B, then A will receive updates about B's presence on the network. This is a \emph{directed} relation; B might not be subscribed to A. Thus, conceptually, subscription is a directed graph that needs to be stored on disk as well as in memory. There is, then, a choice of how to represent this graph.
@@ -197,17 +220,7 @@ The subscribers of user A are recorded in the XMPP \code{<item>} elements as \co
 
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
-[but --- no need to enforce, since I abandoned CRUD operations and can trust my own files to be consistent]
-However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters are determined by the content of the roster files which I ensure are consistent myself, and since they do not change during runtime or get updated by the server, this consistency is maintained.
-
-\subsection{Messaging and stanzas}
-Outline:
-\begin{itemize}
-  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
-  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
-  \item Sticking to single-server model; i.e. no federation (``yet'')
-  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
-\end{itemize}
+However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 \subsection{Multi-client architecture}
 This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as
@@ -224,7 +237,7 @@ These both make heavy use of the \code{Xml} and \code{Xmpp} modules.
 \section{The \code{Xml} module}\label{sec:xmlmod}
 XML is central to XMPP. In my code, it comes in three main forms: as text, as low-level `Raw' XML, and as high-level \code{xml_node}. The \code{Xml} module provides utilities for working with these representations.
 
-Both explicit and default prefixes\ref{sec:namespaces} are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the \code{<body>} element of HTML could be written \code{<html:body>} (as long as the \code{html} prefix referred to the HTML namespace), \code{<body>} (provided HTML was the default namespace), or even \code{<quux:body>} (if \code{quux} referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial \code{<stream>} element needs to use the \code{stream:} prefix. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99\% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
+Both explicit and default prefixes (Section~\ref{sec:namespaces}) are used throughout XMPP. When starting out, I assumed that the particular prefix used on some element would not matter. For instance, the \code{<body>} element of HTML could be written \code{<html:body>} (as long as the \code{html} prefix referred to the HTML namespace), \code{<body>} (provided HTML was the default namespace), or even \code{<quux:body>} (if \code{quux} referred to the HTML namespace). However, XMPP provides at least one exception to this: the initial \code{<stream>} element needs to use the \code{stream:} prefix. So, a distinction between namespaces and their prefixes was preserved at some level of the system. However, in the other 99\% of cases, I considered it sufficient to place constraints only on the namespace and tag, hence why the XML checking functions are prefix-agnostic.
 
 XML-as-text is suitable only for human comprehension; computationally, being a long unstructured block of bytes, it is unsuitable for computer processing. XMPP, though, is built around sending and receiving XML via text, so the ability to parse incoming XML and output XML text was fundamental. The \code{Xml.P} module contains Angstrom parsers for XML syntax, producing a `literal' abstract representation defined in \code{Xml.P.Raw}. Functions for converting this back into text, for output purposes, also live in \code{Xml.P.Raw}.
 
@@ -240,7 +253,7 @@ let tag_open =
       tok_rangle
 \end{ocaml}
 
-This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. To elaborate: \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')}, and so on, where \code{lex} skips whitespace.
+This can be read as: ``Accept the token \code{<}, then a qualified name, then zero or more attribute-value pairs, then the token \code{>}; combine the qualified name and the attributes into a \code{Branch} node with no children''. Further, \code{tok_langle = lex (char '<')}, \code{tok_colon = lex (char ':')}, and so on, where \code{lex} skips whitespace.
 
 The parsers written in this manner resemble the Context-Free-Grammars of XML structures, although the choice operator \code{<|>} is an ordered choice. This shows itself in my implementation of \code{tree}:
 
@@ -429,7 +442,7 @@ The matchers live in the \code{Xml.Check} module. The main ones are \code{tag} /
 I avoid using the word `return' here, as strictly what these functions return is a \code{Result}, possibly containing the `resulting' value --- or an error. For those that merely check some condition rather than retrieve a value (\code{tag}/\code{qtag} and \code{attv}), I say they `succeed' instead\footnote{This could mean `resulting' in the value \code{()}, but I actually found it more useful to `result' in the \code{xml_node} passed in.}.
 
 \subsubsection{Matcher combinators}
-The combinators let me write XML matching code resembling, as closely as possible in OCaml\footnote{Short of syntax extensions perhaps, which I am unfamiliar with}, the XML itself:
+The combinators let me write XML matching code resembling, as closely as possible in OCaml\footnote{Short of syntax extensions perhaps, which I am unfamiliar with.}, the XML itself:
 
 \begin{ocaml}
 tag "iq" *> attv "type" "get" *> attr "id" >>= fun id ->
@@ -438,14 +451,14 @@ tag "iq" *> attv "type" "get" *> attr "id" >>= fun id ->
 \end{ocaml}
 
 This would succeed on the XML node
-\begin{lstlisting}[language=xml]
+\begin{xml}
 <foo:iq type="get" id="123" > ... </foo:iq>.
-\end{lstlisting}
+\end{xml}
 
 I implemented the usual \code{>>=} for `bind', \code{*>} for `sequence', \code{<|>} for `alternative' and the direction-reversed versions where needed.
 
 \begin{itemize}
-  \item \code{(f >>= fun x -> g) xml} first performs \code{f xml}; if successful, it binds the result value to \code{x} and returns \code{g xml}. Otherwise, if \code{f xml} fails, it aborts with the error value.
+  \item \code{(f >>= fun x -> g) xml} first performs \code{f xml}; if successful, it binds the result value to \code{x} and returns \code{g xml}.\footnote{In other words, \code{(f >>= g) xml} evaluates to \code{g xml x} if \code{f xml} results in \code{x} --- I only explained it with an explicit binder because that is how it tends to be used.} Otherwise, if \code{f xml} fails, it aborts with the error value.
 
   \item \code{(f *> g) xml} is like \code{>>=} but discards the result, binding no values. In this sense, it sequences a `check' with a check or match, although this is a conceptual distinction that is not enforced in the code.
 
@@ -467,7 +480,7 @@ Out of the above matchers, only \code{text} makes sense for text nodes. Because 
 \subsubsection{The question of buffering}
 Angstrom provides the \code{parse_only} function for parsing an in-memory string in its entirety. But in this application, such a mode is not possible. First, from a remote source on the network, completed XML might arrive in several bursts of data rather than all at once. Second, most XML takes the form of stanzas, which need to be parsed and processed one-by-one as they come. This all points to some sort of `incremental' parsing functionality, requiring buffering of XML from outside. Fortunately, Angstrom's \code{parse} function produces a state that can be progressively fed input until it finishes.
 
-From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server and client code (such as the initial handshake). Functions for responding to the client were simple, generally consisting of output to a channel plus a flush of the channel. The `expect' function, though, was more involved.
+From the beginning, I found it useful to employ an ``expect-input, respond-output'' model for the conversational bulk of the server and client code, such as the initial handshake. Functions for responding to the client were simple, generally consisting of output to a channel plus a flush of the channel. The `expect' function, though, was more involved.
 
 Angstrom's \code{Buffered} interface maintains an internal buffer, of type \code{Bigstring}. After a successful parse, some of the data in the buffer may be unconsumed. It is the caller's responsibility to ensure parsing continues where it left off, and this is handled by the function passing the relevant sub-buffer each time it is needed. When everything has been consumed, the buffer needs refilling from the network. Unfortunately, the standard library's \code{input} function reads data into a \code{Bytes}-type buffer and not a \code{Bigstring}. To bridge this gap, I split my originally desired 1024-byte buffer into a \code{Bytes} and \code{Bigstring} of 512 bytes each. \code{input} reads into the \code{Bytes}, which is then blitted to the \code{Bigstring}, which can then be passed to Angstrom for parsing.
 
@@ -478,7 +491,7 @@ expect P.tree >>| Xml.from_raw >>= fun high_level_xml_node -> ...
 \end{ocaml}
 
 \section{The \code{Xmpp} module}
-This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in \ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
+This module is for common functionality more specific to XMPP than XML, although the line is arbitrary. The main functionality here is roster management, and recognition of stanzas. As mentioned in Section~\ref{sec:xmlmod}, the prefix-namespace pairs used often in XMPP are defined here.
 
 \subsection{The Roster}
 There is conceptually a mapping from user to their roster. I found it useful to view a user's roster as another mapping, from a contact's JID to their \code{<item>} record. The user-roster association is a global \code{Map} data structure, and the roster itself is another \code{Map}.
@@ -519,48 +532,65 @@ let item_of_xml =
     pure { jid; name; recv_ok; send_ok; groups=[] }
 \end{ocaml}
 
-This demonstrates the utility of the \code{xml_node} matchers discussed in \ref{sec:matchers}. This function treats the absence of a \code{subscription} attribute as equivalent to \code{subscription="none"} (hence the use of \code{attr_opt}). \code{groups} is set to an empty value for the aforementioned reasons. There is also a corresponding \code{to_xml} function acting on \code{item} structures.
+This demonstrates the utility of the \code{xml_node} matchers discussed in Section~\ref{sec:matchers}. This function treats the absence of a \code{subscription} attribute as equivalent to \code{subscription="none"} (hence the use of \code{attr_opt}). \code{groups} is set to an empty value for the aforementioned reasons. There is also a corresponding \code{to_xml} function acting on \code{item} structures.
 
-[abandonment of CRUD, view towards testing]
+There is one final thing to mention about how rosters are handled: the function \code{Roster.get_subs_of} returns a list of all the subscribers of a user, filtered from their full roster. If their roster does not exist, a value of \code{None} is returned instead, rather than an error. When this function is used to broadcast a client's initial presence later on, the absence of a roster is treated as a subscription to and from everybody currently online. This was included as a default option to make bulk testing easier, as it precludes the need to maintain lots of identical roster files that achieve the same thing.
 
 \subsection{The \code{Stanza} module}
-Outline:
+The main purpose of this module is to make the common task of handling stanzas easier, by bringing some of the semantics of XMPP stanzas into the OCaml type level. Although there are three types of stanzas in XMPP, I only found it necessary to give \code{iq} stanzas this treatment, since they make use of request IDs and have structure conditional on their attributes. The \code{message} and \code{presence} stanzas only required the checking of attributes and forwarding, so they do not feature here.
 
-\begin{itemize}
-  \item Meant to bring stanza formats into the type level
+I defined the type \code{Iq.t} as a combination of request ID and \code{iq_type}. \code{iq_type} incorporates the \code{type} attribute of the \code{iq} stanza and the various possibilities for the children of the node:
 
-  \item \code{Iq} sub-module has \code{Iq.t} (record with request ID and further data dependent on the \code{type} attribute) and \code{Iq.of_xml}
+\begin{ocaml}
+  type query = Xml.xml_node
+  type iq_type =
+  | Get of query
+  | Set of query
+  | Result of query option
+  | Error of query option * error
+\end{ocaml}
 
-  \item Did not extend with \code{Message} / \code{Presence} sub-modules since they are not as general or varied as \code{Iq}; managed fine without type-level message or presence stanzas
-\end{itemize}
+XMPP specifies that \code{type="get"} or \code{"set"} means the contents are a query for the information. \code{result} \code{iq}s can be empty (as acknowledgements of success) and likewise with errors, and this is mapped to the OCaml \code{option} type.
+
+The \code{of_xml} function converts XML to an \code{Iq.t}, again using the matchers:
+
+\begin{ocaml}
+let of_xml =
+let open Xml.Check in
+  tag "iq" *> attr "id" >>= fun req_id ->
+    attr "type" >>= (function
+    | "get" -> child >>| fun ch -> Get ch
+    | "set" -> child >>| fun ch -> Set ch
+    | "result" -> fun xml -> Ok (Result (Rresult.R.to_option (child xml)))
+    | "error" -> fun xml -> Ok (Error (Rresult.R.to_option (child xml),"?"))
+    | _ -> fail "bad-request") >>| fun iq_type -> { req_id; iq_type }
+\end{ocaml}
+
+The module gives rise to the following idiom that is employed for received \code{iq} stanzas, taking advantage of OCaml's pattern matching on function arguments:
+
+\begin{ocaml}
+  expect P.tree >>| Xml.from_raw >>= Xmpp.Stanza.Iq.of_xml >>=
+  fun { req_id; iq_type=(Get query) } -> ...
+\end{ocaml}
 
 \section{The server program}
 \subsection{Work-dispatching machinery (the \code{Dispatch} module)}\label{sec:mod-dispatch}
-On the server, per client, post-handshake; outline:
+This module concerns itself with providing a means to push stanzas for delivery to work queues, and to retrieve them from said work queues, concurrently.
 
-\begin{itemize}
-  \item Sets up worker thread to forward stanzas to the client. Obtains stanzas via \code{dequeue_work} on work queue created by \code{client_connected}.
+On a per-client basis, after handshaking (discussed later), the server sets up a worker thread to forward stanzas to the client. The worker obtains stanzas by means of \code{dequeue_work} from the work queue created by the \code{client_connected} function. The main thread then reacts to messages and other stanzas that arrive, forwarding them to the appropriate worker by means of \code{dispatch}.
 
-  \item Main thread reacts to messages arriving, forwards to appropriate worker thread by means of \code{dispatch <jid> <stanza>}
+A global map exists to obtain the work-queue for a specified JID. This map uses the immutable \code{Map} data structure in tandem with an OCaml \code{ref}erence cell which, being concurrently updated, is protected with a mutex.
 
-  \item Global \code{jid -> work-queue} map, protected by mutex
+Each work-queue consists of a \code{Queue} data structure, along with a \code{Condition} variable \code{avail} and its associated mutex, acting as a \emph{monitor} for the queue. \code{avail} is signalled when \code{dispatch} pushes work to the queue, indicating that there is available work to process. There is also a boolean representing `finished', which exists to allow the worker thread to quit gracefully.
 
-  \item Each work-queue has a \code{Queue} data structure and a \code{Condition} (`monitor' pattern) for `work available' plus its associated mutex. Also a `finished' boolean so worker thread can finish and quit gracefully.
+The \code{dequeue_work} function blocks, waiting for the \code{avail} signal. If the `finished' flag is set, it hands the value \code{None} to the worker once the queue empties. This lets the worker finish any work it currently has before exiting. Otherwise, work is extracted from the queue and returned.
 
-  \item \code{dispatch} pushes the work to the appropriate queue, signalling `available'
-
-  \item \code{dequeue_work} blocks waiting on `available'; if the `finished' flag is set, produces \code{None} after queue empties, signalling to the worker thread to exit. Otherwise, produces \code{Some <work>}
-
-  \item \code{client_disconnected} sets the `finished' flag and signals, then removes client from the global map.
-\end{itemize}
+Finally, when the main thread's message-processing loop is over, it calls \code{client_disconnected}. This sets the worker's `finished' flag, signals \code{avail}, and removes the client's entry from the global map.
 
 \subsection{Server operation}
-The server program uses a simple `driver' to spawn off a thread each time a client connects. The function \code{sv_start ()} simply performs \code{Driver.establish_server} on the local loopback address, passing in the function \code{per_client}.
+The server program uses a simple `driver' to spawn off a thread each time a client connects. The function \code{sv_start ()} simply performs \code{Driver.establish_server}\footnote{The standard library provides \code{Unix.establish_server}, which forks a child process to handle each client connection. I implemented a similar function that spawns threads instead of processes. This is necessary for the shared data structures in the \code{Dispatch} and \code{Roster} modules to work.} on the local loopback address, passing in the function \code{per_client}.
 
-[soon-to-be obsolete paragraph]
-\code{Driver.establish_server} is an adapted version of \code{Unix.establish_server} from the standard library. The Unix version spawns off a separate process to handle each client connection, which was revealed as deeply problematic during testing. I took the implementation of \code{Unix.establish_server} and rewrote the process-spawning code with thread-spawning code.
-
-When \code{Driver.establish_server} accepts a client connection, it opens a read and a write channel and passes them to \code{per_client}, invoked on a new thread. The XMPP protocol then follows in two broad stages, setup and service. Setup involves handshaking with the client, performing authentication and resource binding, and the initial presence. Service consists of responding to client requests and delivering messages to the client.
+When \code{Driver.establish_server} accepts a client connection, it opens a read and a write channel and passes them to \code{per_client}, invoked on a new thread. The XMPP protocol then follows in two broad stages, \emph{setup} and \emph{service}. Setup involves handshaking with the client, performing authentication and resource binding, and the initial presence. Service consists of responding to client requests and delivering messages to the client.
 
 All of these stages make use of the \code{Result} monad to deal with errors. Errors that occur during handshaking abort the protocol, as do fundamental errors during service (such as malformed XML). The service stage also deals with certain recoverable errors in individual stanzas, such as requests for unimplemented functionality.
 
@@ -578,7 +608,7 @@ let stream_handshake id =
   in respond response; Ok (my_addr, id)
 \end{ocaml}
 
-This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag and relevant data extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use. The function returns the information obtained: the stream ID and the server's Web address (\code{ptii.proj} is used throughout this project).
+This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag, and the relevant data is extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use. The function returns the information obtained: the stream ID and the server's Web address (\code{ptii.proj} is used throughout this project).
 
 Further outline:
 
