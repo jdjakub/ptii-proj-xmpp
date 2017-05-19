@@ -173,7 +173,7 @@ To help guide me through the relevant sections of RFC 6120 and 6121, I downloade
 
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
-\subsection{Handshake and setup considerations}
+\subsection{Handshake and setup considerations}\label{sec:prep-handshake}
 Communication in XMPP revolves around sending stanzas over XML streams. After TCP connection, the client and server need to set up their streams and negotiate various features before they can begin exchanging stanzas. This is known as the handshake. I see the handshake as consisting of the following steps:
 \begin{enumerate}
   \item Set up the streams. The client and server exchange \code{<stream>} opening tags containing the server name, protocol version (1.0) and a stream ID for the client to hold onto.
@@ -201,7 +201,7 @@ XMPP \code{stanzas} are XML elements falling into three categories: \code{messag
 \begin{itemize}
   \item \code{message} stanzas represent communication between clients. They specify a `from' address, a `to' address, and a message type---for example, `chat'. Messages can contain somewhat arbitrary XML content, but the server need not perform inspection on this; it can simply forward it, untouched, to the recipient.
 
-  Handshaking with other servers and forwarding to clients residing on them, the `federated' model, complicates the process, as the server must be able to receive and understand the language of XMPP servers as well as clients. Forwarding messages to directly connected clients is the priority.
+  Handshaking with other servers and forwarding to clients residing on them, the `federated' model, complicates the process, as the server must be able to receive and understand the language of XMPP servers as well as clients. This would include negotiations with other servers on their terms---possibly requiring implementation of encryption and authentication, or other stream features, in order to conform. Forwarding messages to \emph{directly connected} clients is the priority.
 
   \item \code{presence} stanzas inform the server, and other clients, about the status of a user. There are the many usual options for IM applications (Away, Do Not Disturb, etc.), but the most important ones are Available and Unavailable, signifying an online and disconnected status, respectively.
 
@@ -227,12 +227,7 @@ Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, the
 
 I view supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
-\subsection{Multi-client architecture}
-This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as
-\begin{itemize}
-  \item Developed first for a single client; multiple clients perform the same actions specified by the same function, just in  different thread
-  \item Design of the testing clients; explaining the analogous Section \ref{sec:mod-client} in Implementation, as well as the test rig
-\end{itemize}
+Finally, there is a concept of groups that users can be a part of, but I will focus on the roster essentials first.
 
 
 \chapter{Implementation}
@@ -272,8 +267,6 @@ let tree = fix ( fun t_rec ->
 \end{ocaml}
 
 As an XML node can be simple text, this is accounted for by assuming text content when an attempt to parse a tag fails.
-
-[should I include more on parsers?]
 
 \subsection{The \code{Raw} module}
 As mentioned, the \code{Raw} module contains the `literal' abstract XML representation that these parsers target. Consider
@@ -317,7 +310,7 @@ let rec to_string = function
             to_string_open xml ^ interior ^ to_string_close xml
 \end{ocaml}
 
-An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags. [indentation?] [sanitisation?][more on \code{to_string_open}, \code{string_of_qname}, \code{string_of_attrs}]
+An XML node without children can be written as \code{<node></node>}. However, it is legal to write such an empty node as \code{<node />}, which is often visually cleaner. This is what \code{to_string_single} does. Otherwise, the children are recursively serialised and enveloped in the opening and closing tags.
 
 \subsubsection{Utility constructors}
 Initially, having the \code{Raw} representation and its serialisation functions, I simply used them to generate the server responses. However, many elements needed at least a default namespace, all prefixes needed to be explicitly specified, and the syntax was very heavy to write and read:
@@ -382,7 +375,7 @@ xml_d Xmpp.foo [ "type", "fatal" ] [
 ]
 \end{ocaml}
 
-Finally, \code{xml} is a somewhat idiosyncratic variant that exists for child XML that can use a prefix, but does not declare it. [made sense at the time ... rather obscure motivation. probably worth leaving out --- though it \emph{is} used in code samples!]
+Finally, \code{xml} is a somewhat idiosyncratic variant that exists for child XML that can use a prefix, but does not declare it.
 
 The advantages of this notation are clear: high signal-to-noise ratio\footnote{OCaml's data constructors are not curried, requiring parentheses, whereas function application does not require them. Also, in some situations, such as lists, it is legal to drop parentheses in pairs: \code{[ (x,y); (z,w) ]} becomes \code{[ x,y; z,w ]}.}, and the use of functions allows automatic handling of namespaces. The end result is that the code finally looks somewhat like the thing it represents.
 
@@ -405,7 +398,7 @@ type xml_node =
 
 The main improvement is the use of an opaque attribute lookup function, rather than an explicit data structure. \code{attr_full} takes a qualified name, but since most attributes do not have a namespace prefix, the more convenient attr is also provided. \code{attr} is implemented as calling \code{attr_full} with an empty namespace prefix.
 
-One consideration with namespaces is that prefix-namespace mappings are inherited to child nodes of their declaration site. \code{xml_node} incorporates this functionality into the namespace function. It finds the namespace associated with a prefix, delegating to the parent node if unsuccessful. [expand on how exactly I accomplished this]
+One consideration with namespaces is that prefix-namespace mappings are inherited to child nodes of their declaration site. \code{xml_node} incorporates this functionality into the namespace function. It finds the namespace associated with a prefix, delegating to the parent node if unsuccessful.
 
 \code{attr}, \code{attr_full} and namespace all internally use the standard library's \code{Map} structure, being more appropriate for lookup than lists; lists require a linear scan to locate a mapping, and a full scan of the list to determine its absence, whereas \code{Map} provides logarithmic-time lookup.
 
@@ -413,7 +406,7 @@ An \code{xml_node} is constructed from an original \code{Raw.xml} structure, and
 
 The language of any text content is, like namespaces, an inherited special attribute, and is signified by \code{xml:lang} in the attribute list. It is stored in the \code{lang} field of the branch, and propagated to leaf \code{Text} nodes. This is because a \code{Text} instance, in isolation, does not have a reference to its parent, and hence must have its own \code{lang} attribute.
 
-The construction of an \code{xml_node} from \code{Raw.xml} is accomplished by the \code{from_raw_br} function. [how much detail to go into on this?]
+The construction of an \code{xml_node} from \code{Raw.xml} is accomplished by the \code{from_raw_br} function. It recursively walks the tree, building up \code{attr} and \code{namespace} maps along the way, and processes special attributes.
 
 \subsubsection{Semantic checking and matching} \label{sec:matchers}
 The text-to-\code{Raw} parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of ``pattern matching'' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep anyway; perhaps I should prioritise this reason], so I went down the route of parsers and combinators modelled after Angstrom.
@@ -476,7 +469,9 @@ The matcher implementations are all fairly straightforward and similar to each o
 let attr k = function
   | Xml xml -> (match xml.attr k with
     | Some v -> Ok v
-    | None -> Error (format "Expected %s attribute in <%s> tag" k (snd xml.tag)) )
+    | None -> Error (format
+        "Expected %s attribute in <%s> tag"
+          k (snd xml.tag)) )
   | Text _ -> Error "Expected XML, not content"
 \end{ocaml}
 
@@ -516,7 +511,7 @@ I represented \code{<item>} records, in-memory, as follows:
   \end{ocaml}
 \end{minipage}
 
-This is almost a direct XML-to-OCaml translation of XMPP's \code{<item>} element, the main difference being my treatment of the \code{subscription} attribute. I felt that the \code{subscription} attribute as \code{none}, \code{from}, \code{to} or \code{both} was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: \code{recv_ok} (activated by \code{to} and \code{both}) and \code{send_ok} (activated by \code{from} and \code{both}). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via \code{send_ok}, rather than mentally decrypting `to' or `from'. [as for groups, I had to abandon them because of time]
+This is almost a direct XML-to-OCaml translation of XMPP's \code{<item>} element, the main difference being my treatment of the \code{subscription} attribute. I felt that the \code{subscription} attribute as \code{none}, \code{from}, \code{to} or \code{both} was an odd and hard-to-remember way of representing subscription. The system thus translates this field into two boolean conditions: \code{recv_ok} (activated by \code{to} and \code{both}) and \code{send_ok} (activated by \code{from} and \code{both}). This was better for the uses to which the roster is put: when wishing to send presence notifications, I simply check whether it is OK to send, via \code{send_ok}, rather than mentally decrypting `to' or `from'.
 
 Rosters are managed through the \code{Roster} sub-module. After authenticating a client, the server calls \code{Roster.load_from_storage} with their username, to ensure that their contact information is available.
 
@@ -614,110 +609,61 @@ let stream_handshake id =
   in respond response; Ok (my_addr, id)
 \end{ocaml}
 
-This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag, and the relevant data is extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use. The function returns the information obtained: the stream ID and the server's Web address (\code{ptii.proj} is used throughout this project).
+This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag, and the relevant data is extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use\footnote{Though the stream IDs given by the server are not random, they do not have an effect on the behaviour of Psi or the test clients.}. The function returns the information obtained: the stream ID, and the server's Web address (\code{ptii.proj} is used throughout this project).
 
-Further outline:
+The rest of the setup implements the points in Section~\ref{sec:prep-handshake}. The server offers the list of stream features to negotiate, consisting solely of the \code{PLAIN} authentication mechanism. After client chooses \code{PLAIN}, login information is extracted from the base64-encoded text with a special Angstrom parser.
 
-\begin{itemize}
-  \item Offers the list of stream features to negotiate. Sole element is the required authentication mechanism; server offers \code{PLAIN} auth only
+Now that the username has been obtained, the JID is constructed, and is used to load the client's roster into memory if it exists. A second handshake is performed, resource binding occurs, and the client's full JID is returned---incorporating the username, server address, and resource. An IQ `set' session request is expected, to formally establish the session, and is answered with an empty IQ, signalling success.
 
-  \item After client chooses \code{PLAIN}, extracts login information from \code{base64}-encoded text with a special Angstrom parser. Responds with `success' to client. Obvious extension point for user accounts, encryption, proper authentication etc.
+The initial roster request, is then serviced with any roster data that was loaded previously. If there is none, the server responds with an empty roster. This is technically not reflective of ``no roster'' being treated specially as a universal subscription, to / from everyone. However, this behaviour is to make testing easier.
 
-  \item Now username has been obtained, loads client's roster into memory, if it exists.
+Finally, the initial presence is received, echoed and forwarded to the user's subscribers. If universally subscribed, the server obtains list of currently online clients from the \code{Dispatch} module, filtering out the originator from the list before forwarding (since the presence was already echoed back).
 
-  \item Restarts the stream by handshaking again as per XMPP spec. Offers features again, this time consisting of the required process to bind a resource. Accomplished via \code{<iq>} stanzas, using the \code{Stanza.Iq} helpers. Returns client's full JID incorporating their username, server address and resource.
-
-  \item Expects an \code{<iq>} `set' session request, to formally establish the session, responds with empty \code{<iq>} signalling success. Optional behaviour according to the spec, but implemented as Psi performs this step.
-
-  \item Expects initial request for roster, responds with whatever roster data is specified in the \code{roster/} directory. If none, responds with empty roster, even though this is treated specially for testing as a universal subscription, to / from everyone.
-
-  \item Expects initial presence, followed by echoing back to the client and forwarding to its subscribers. If universally subscribed, obtains list of currently online clients from the \code{Dispatch} module, filtering out this client from the list before forwarding.
-
-  Setup is finished, now moves into servicing incoming stanzas.
-\end{itemize}
+At this point, setup is finished, now moves into servicing incoming stanzas.
 
 \subsubsection{Service stage}
-Outline:
+The server now calls \code{Dispatch.client_connected} to obtain a work queue. It sets up a worker thread, which loops, extracting from the queue and forwarding stanzas to the client.
+
+Next, the main thread itself enters a loop, expecting stanzas and behaving accordingly. Auxiliary behaviour such as parsing the stanzas and handling errors lives in the loop body, while the main behaviour is separated into functions \code{handle_iq}, \code{handle_presence}, and \code{handle_message}:
 
 \begin{itemize}
-  \item Calls \code{Dispatch.client_connected} to obtain work queue. Sets up worker thread, which loops extracting from the queue and forwarding the stanzas to the client.
+  \item \code{handle_iq} uses the IQ's request ID to return an \code{Iq.t} representing the stanza error \code{feature-not-implemented}. The calling code translates this into the actual XML and pushes this to the work queue.
 
-  \item Next, enters loop expecting stanzas and behaving accordingly. Main behaviour separated into \code{handle_iq}, \code{handle_presence}, \code{handle_message}. Auxiliary behaviour such as parsing the stanzas and handling errors lives in the loop body.
-
-  \item \code{handle_iq} returns an \code{Iq.t} representing the stanza error feature-not-implemented. Calling code translates this into the actual XML and responds.
-
-  \item \code{handle_presence} watches for the final \code{<presence type="unavailable" />} that signifies the client's wish to disconnect, returning a value that the calling code uses to end the loop.
+  \item \code{handle_presence} watches for the final \code{<presence type="unavailable" />} that signifies the client's wish to disconnect, and returns a value that the calling code uses to end the loop.
 
   \item \code{handle_message} ensures \code{<message>} elements have a valid source and destination, returning the message and the recipient to deliver it to. The calling code then uses \code{Dispatch.dispatch} to send it on its way.
-
-  \item Once the loop finished, \code{Dispatch.client_disconnected} is called to cut off the stream of stanzas into the worker thread. The main thread then waits for the worker to process what remains in its queue before terminating. Finally, the closing \code{</stream:stream>} is sent and the socket is closed as \code{per_client} finishes. This stage can actually be reached prematurely if stream errors occur during setup or service, and if so the error is returned and printed out.
 \end{itemize}
 
-\subsubsection{Statistics}
-Outline:
-
-\begin{itemize}
-  \item When server binary started, spawns statistics-gathering thread
-  \item Each time a worker thread delivers a message to its client, increments global message count
-  \item Stats thread samples this value, computes message delta from previous value (saved internally)
-  \item Also samples wallclock time (\code{Unix.gettimeofday ()}) and CPU time (\code{Sys.time ()}), computing delta from previous values.
-  \item Divides message delta by these time deltas to obtain average throughput for the last 5 seconds.
-  \item Prints stats
-  \item Then, estimates how much time was spent performing all the above operations and compensates for this by reducing the time to delay
-  \item Updates the `previous' values for time, message delta, etc.
-  \item Delays (sleeps) such that the next sample will occur very close to 5 seconds after the previous sample
-\end{itemize}
+Once the loop finishes, \code{Dispatch.client_disconnected} is called to cut off the stream of stanzas into the worker thread. The main thread then waits for the worker to process what remains in its queue before terminating. Finally, the closing \code{</stream:stream>} is sent and the socket is closed as \code{per_client} finishes. This stage can actually be reached prematurely if stream errors occur during setup or service, and if so the error is returned and printed out.
 
 \section{The \code{Client} module}\label{sec:mod-client}
-Outline:
+Psi was very useful for using XMPP and learning about the protocol, but it could only be operated through its GUI. To evaluate the server's performance, I needed automatable clients that I could control \emph{en masse}. This was the motivation for the \code{Client} module.
+
+Since each client has substantial state (sockets, buffers, XMPP session), I reasoned it would be easier to operate clients as objects in the interactive toplevel than to use separate records and functions. The module defines a \code{client} class, whose objects contain the following methods:
 
 \begin{itemize}
-  \item Object rationale; easier to have each client with its own state (sockets, buffers) and command via \code{client1#handshake} etc, especially in toplevel for experimentation.
+  \item Constructor \code{client} is called with the username and the server address; it connects, and stores the username for later.
 
-  \item Handshake designed to be symmetric to server's and ensure it all goes smoothly. Not designed to anticipate variation from the server; purely for testing. Uses dummy password.
+  \item \code{#handshake} method performs handshake and returns the roster. The handshake here is designed to be symmetric to the server's, to ensure it all goes smoothly. It is not designed to anticipate substantial variation in the server responses, as it is purely for testing.
 
-  \item Constructor \code{client} connects and stores username for later.
+  \item \code{#message "recpt" body} sends the body XML via a \code{message} stanza to \code{recpt@ptii.proj}.
 
-  \item \code{#handshake} method performs handshake, returns roster.
+  \item \code{#message_t "recpt" text} is a more user-friendly version where the body consists of text. The text is wrapped in a \code{<body>} element, without which Psi does not display the message.
 
-  \item \code{#message "recpt" body} sends the body XML via a \code{<message>} to \code{recpt@ptii.proj}.
-
-  \item \code{#message_t "recpt" text} is a more user-friendly version where the body consists of just text.
-
-  \item \code{#disconnect} sends \code{<presence type="unavailable" >} and closing \code{</stream:stream>}.
+  \item \code{#disconnect} sends \code{<presence type="unavailable" >} and the closing \code{</stream:stream>}.
 
   \item \code{#spill} extracts one XML element / tree from client's receive buffer, and returns it.
-
 \end{itemize}
 
 
 \chapter{Evaluation}
 \section{Presence notifications and roster retrieval}
-I had three rosters for testing purposes: \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Their mutual subscriptions demonstrate the four combinations \code{none}, \code{from}, \code{to}, and \code{both}.
-
-\begin{figure}
-  \begin{tikzpicture}
-    \node[initial,state] (A) [below  left of=B] {A};
-    \node[state]         (B)                    {B};
-    \node[state]         (C) [below right of=B] {C};
-
-    \path (A) edge              node {} (B)
-          (B) edge              node {} (C)
-          (C) edge              node {} (B);
-  \end{tikzpicture}
-\end{figure}
+I had three rosters for testing purposes: \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Alice is subscribed to Bob; Bob and Caroll are mutually subscribed. Thus, their subscriptions demonstrate the four combinations \code{none} (Alice-Caroll), \code{from} (Bob-Alice), \code{to} (Alice-Bob), and \code{both} (Bob-Caroll).
 
 I started an OCaml toplevel session and created the three client objects. I then connected and handshaked in the order Alice, Bob, Caroll.
-The logs show that their consecutive connections produce the correct presence-notification patterns, according to their subscriptions to each other: Alice received Bob's presence, Bob received Caroll's presence, and everyone received their own presence. When Caroll disconnected, only Bob received the notification; when Bob disconnected, Alice was notified.
+The logs (see Appendix~\ref{apdx:pres-logs}) show that their consecutive connections produce the correct presence-notification patterns, according to their subscriptions to each other: Alice received Bob's presence, Bob received Caroll's presence, and everyone received their own presence. When Caroll disconnected, only Bob received the notification; when Bob disconnected, Alice was notified. The logs also indicate that the users' rosters were correctly retrieved.
 
-The logs also indicate that the users' rosters were correctly retrieved.
-
-\section{Handshake; connect / disconnect}
-I have screenshot and logs collectively showing the following:
-\begin{itemize}
-  \item Working handshake between Psi and server, plus appropriate \code{feature-not-implemented} response to the non-core features Psi requests
-  \item Conversation between Bob and Caroll via the Psi messaging interface and the \code{Client} module respectively
-\end{itemize}
+\section{Interacting with a real XMPP client}
 Figure~\ref{fig:iq-errors} demonstrates an attempt by Bob to connect to the server using Psi. After a successful handshake, Psi gave an error dialog (not shown) because of the unsupported features, as seen in the server output. For example:
 
 \begin{xml}
@@ -726,10 +672,7 @@ Figure~\ref{fig:iq-errors} demonstrates an attempt by Bob to connect to the serv
    <storage xmlns="storage:bookmarks"/>
   </query>
 </iq>
-\end{xml}
-
-is answered with
-
+\end{xml} is answered with
 \begin{xml}
 <iq type="error" id="aacaa" >
   <error type="cancel" >
@@ -738,7 +681,7 @@ is answered with
 </iq>
 \end{xml}
 
-Psi still continued with the protocol and registered Bob as online. When Caroll connected via the \code{Client} module in the OCaml toplevel, the notification ``Caroll is online'' appeared in the top right-hand corner of the screen. Figure~\ref{caroll-msg} shows the result of two messages; Caroll sends hers with \code{caroll#message_t} and Bob sends his using the Psi interface. Entering \code{caroll#spill} in the toplevel showed that both Caroll's initial presence and Bob's message arrived properly.
+Psi still continued with the protocol and registered Bob as online. When Caroll connected via the \code{Client} module in the OCaml toplevel, the notification ``Caroll is online'' appeared in the top right-hand corner of the screen. Figure~\ref{fig:caroll-msg} shows the result of two messages; Caroll sends hers with \code{caroll#message_t} and Bob sends his using the Psi interface. Entering \code{caroll#spill} in the toplevel showed that both Caroll's initial presence and Bob's message arrived properly.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/iq_errors.png}
@@ -756,9 +699,9 @@ Psi still continued with the protocol and registered Bob as online. When Caroll 
 \subsection{Throughput}
 My primary aim was to see how throughput of message delivery was affected by the number of connected clients. To do this, I somehow needed a throughput figure for different client counts. Thus, I investigated how throughput varied over time for different client counts, hoping to see the value stabilise.
 
-To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers. This meant the figures would incorporate the buffering behaviour of the server and complete the worst-case behaviour under constant requests from clients.
+To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped by \code{client#message_t}, ran over the 512-byte size of the parsing buffers. This meant the figures would incorporate the buffering behaviour of the server and complete the worst-case behaviour under constant requests from clients.
 
-The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
+The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays consistently close to 5 seconds\footnote{The sampler thread compensates for the time it spends calculating by reducing the time to sleep between samples. }.
 
 \section{Procedure}
 I began by observing the time-throughput curve for $n=20$, 40, and 60. For $n=70$ and above, the server demonstrated its breaking point by causing itself and the other applications on my computer to hang and require a forced reboot. I stopped there and started filling in the gaps between the other values; unfortunately, time did not premit further investigation of this issue.
@@ -785,10 +728,10 @@ I then ran hot/cold tests for $n=5$ with a very small message size, to give the 
   \label{fig:5hotcold}
 \end{figure}
 
-\subsubsection{Results and comments}
+\subsection{Results and comments}
 I obtained time-throughput characteristics for $n=5$, 10, 20, 30, 40 and 60. Overall, they remained reasonably stable after $t=100s$, after an initial transient with higher peak value.
 
-Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns --- see Appendix~\ref{apdx:graphs} for details.
+Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns---see Appendix~\ref{apdx:graphs} for details.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold.png}
@@ -796,7 +739,7 @@ Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beg
   \label{fig:example-chstic}
 \end{figure}
 
-As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated as the box-plots in Figure~\ref{fig:summary}.
+As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated into Figure~\ref{fig:summary}.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/throughp_clients.png}
@@ -805,6 +748,6 @@ As the number $n$ of client pairs increases, the general trend is for the throug
 \end{figure}
 
 
-\chapter{Conclusion}
+\chapter{Conclusions}
 
 \end{document}

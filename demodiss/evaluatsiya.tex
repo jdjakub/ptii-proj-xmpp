@@ -3,16 +3,9 @@
 I had three rosters for testing purposes: \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Alice is subscribed to Bob; Bob and Caroll are mutually subscribed. Thus, their subscriptions demonstrate the four combinations \code{none} (Alice-Caroll), \code{from} (Bob-Alice), \code{to} (Alice-Bob), and \code{both} (Bob-Caroll).
 
 I started an OCaml toplevel session and created the three client objects. I then connected and handshaked in the order Alice, Bob, Caroll.
-The logs (see Appendix~\ref{apdx:pres-logs}) show that their consecutive connections produce the correct presence-notification patterns, according to their subscriptions to each other: Alice received Bob's presence, Bob received Caroll's presence, and everyone received their own presence. When Caroll disconnected, only Bob received the notification; when Bob disconnected, Alice was notified.
+The logs (see Appendix~\ref{apdx:pres-logs}) show that their consecutive connections produce the correct presence-notification patterns, according to their subscriptions to each other: Alice received Bob's presence, Bob received Caroll's presence, and everyone received their own presence. When Caroll disconnected, only Bob received the notification; when Bob disconnected, Alice was notified. The logs also indicate that the users' rosters were correctly retrieved.
 
-The logs also indicate that the users' rosters were correctly retrieved.
-
-\section{Handshake; connect / disconnect}
-I have screenshot and logs collectively showing the following:
-\begin{itemize}
-  \item Working handshake between Psi and server, plus appropriate \code{feature-not-implemented} response to the non-core features Psi requests
-  \item Conversation between Bob and Caroll via the Psi messaging interface and the \code{Client} module respectively
-\end{itemize}
+\section{Interacting with a real XMPP client}
 Figure~\ref{fig:iq-errors} demonstrates an attempt by Bob to connect to the server using Psi. After a successful handshake, Psi gave an error dialog (not shown) because of the unsupported features, as seen in the server output. For example:
 
 \begin{xml}
@@ -21,10 +14,7 @@ Figure~\ref{fig:iq-errors} demonstrates an attempt by Bob to connect to the serv
    <storage xmlns="storage:bookmarks"/>
   </query>
 </iq>
-\end{xml}
-
-is answered with
-
+\end{xml} is answered with
 \begin{xml}
 <iq type="error" id="aacaa" >
   <error type="cancel" >
@@ -33,7 +23,7 @@ is answered with
 </iq>
 \end{xml}
 
-Psi still continued with the protocol and registered Bob as online. When Caroll connected via the \code{Client} module in the OCaml toplevel, the notification ``Caroll is online'' appeared in the top right-hand corner of the screen. Figure~\ref{caroll-msg} shows the result of two messages; Caroll sends hers with \code{caroll#message_t} and Bob sends his using the Psi interface. Entering \code{caroll#spill} in the toplevel showed that both Caroll's initial presence and Bob's message arrived properly.
+Psi still continued with the protocol and registered Bob as online. When Caroll connected via the \code{Client} module in the OCaml toplevel, the notification ``Caroll is online'' appeared in the top right-hand corner of the screen. Figure~\ref{fig:caroll-msg} shows the result of two messages; Caroll sends hers with \code{caroll#message_t} and Bob sends his using the Psi interface. Entering \code{caroll#spill} in the toplevel showed that both Caroll's initial presence and Bob's message arrived properly.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/iq_errors.png}
@@ -51,7 +41,7 @@ Psi still continued with the protocol and registered Bob as online. When Caroll 
 \subsection{Throughput}
 My primary aim was to see how throughput of message delivery was affected by the number of connected clients. To do this, I somehow needed a throughput figure for different client counts. Thus, I investigated how throughput varied over time for different client counts, hoping to see the value stabilise.
 
-To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers. This meant the figures would incorporate the buffering behaviour of the server and complete the worst-case behaviour under constant requests from clients.
+To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped by \code{client#message_t}, ran over the 512-byte size of the parsing buffers. This meant the figures would incorporate the buffering behaviour of the server and complete the worst-case behaviour under constant requests from clients.
 
 The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays consistently close to 5 seconds\footnote{The sampler thread compensates for the time it spends calculating by reducing the time to sleep between samples. }.
 
@@ -80,10 +70,10 @@ I then ran hot/cold tests for $n=5$ with a very small message size, to give the 
   \label{fig:5hotcold}
 \end{figure}
 
-\subsubsection{Results and comments}
+\subsection{Results and comments}
 I obtained time-throughput characteristics for $n=5$, 10, 20, 30, 40 and 60. Overall, they remained reasonably stable after $t=100s$, after an initial transient with higher peak value.
 
-Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns --- see Appendix~\ref{apdx:graphs} for details.
+Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns---see Appendix~\ref{apdx:graphs} for details.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold.png}
@@ -91,7 +81,7 @@ Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beg
   \label{fig:example-chstic}
 \end{figure}
 
-As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated as the box-plots in Figure~\ref{fig:summary}.
+As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated into Figure~\ref{fig:summary}.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/throughp_clients.png}

@@ -379,23 +379,23 @@ let stream_handshake id =
 
 This makes use of all the main concepts from the \code{Xml} module. The \code{expect} function is passed a composite Angstrom text parser to recognise the XML declaration followed by the opening \code{<stream>} element. A successful result is converted to a high-level \code{xml_node}, which is then checked for the correct tag, and the relevant data is extracted. A similar response follows, constructed via the helper functions in \code{Xml.Raw}, giving the client a stream ID to use\footnote{Though the stream IDs given by the server are not random, they do not have an effect on the behaviour of Psi or the test clients.}. The function returns the information obtained: the stream ID, and the server's Web address (\code{ptii.proj} is used throughout this project).
 
-The rest of the setup implements the points in Section~\ref{sec:prep-handshake}. The server offers the list of stream features to negotiate, consisting solely of the \code{PLAIN} authentication mechanism. After client chooses \code{PLAIN}, login information is extracted from the \code{base64}-encoded text with a special Angstrom parser.
+The rest of the setup implements the points in Section~\ref{sec:prep-handshake}. The server offers the list of stream features to negotiate, consisting solely of the \code{PLAIN} authentication mechanism. After client chooses \code{PLAIN}, login information is extracted from the base64-encoded text with a special Angstrom parser.
 
 Now that the username has been obtained, the JID is constructed, and is used to load the client's roster into memory if it exists. A second handshake is performed, resource binding occurs, and the client's full JID is returned---incorporating the username, server address, and resource. An IQ `set' session request is expected, to formally establish the session, and is answered with an empty IQ, signalling success.
 
 The initial roster request, is then serviced with any roster data that was loaded previously. If there is none, the server responds with an empty roster. This is technically not reflective of ``no roster'' being treated specially as a universal subscription, to / from everyone. However, this behaviour is to make testing easier.
 
-Finally, the initial presence is received, echoed and forwarded to the user's subscribers. If universally subscribed, the server obtains list of currently online clients from the \code{Dispatch} module, filtering out the originator from the list before forwarding as the presence was already echoed back.
+Finally, the initial presence is received, echoed and forwarded to the user's subscribers. If universally subscribed, the server obtains list of currently online clients from the \code{Dispatch} module, filtering out the originator from the list before forwarding (since the presence was already echoed back).
 
 At this point, setup is finished, now moves into servicing incoming stanzas.
 
 \subsubsection{Service stage}
-The server now calls \code{Dispatch.client_connected} to obtain a work queue. It sets up a worker thread, which loops, extracting from the queue and forwarding the stanzas to the client.
+The server now calls \code{Dispatch.client_connected} to obtain a work queue. It sets up a worker thread, which loops, extracting from the queue and forwarding stanzas to the client.
 
-Next, the main thread itself enters a loop, expecting stanzas and behaving accordingly. Auxiliary behaviour such as parsing the stanzas and handling errors lives in the loop body, while the main behaviour is separated into functions \code{handle_iq}, \code{handle_presence}, \code{handle_message}:
+Next, the main thread itself enters a loop, expecting stanzas and behaving accordingly. Auxiliary behaviour such as parsing the stanzas and handling errors lives in the loop body, while the main behaviour is separated into functions \code{handle_iq}, \code{handle_presence}, and \code{handle_message}:
 
 \begin{itemize}
-  \item \code{handle_iq} returns an \code{Iq.t} representing the stanza error \code{feature-not-implemented}. The calling code translates this into the actual XML and pushes this to the work queue.
+  \item \code{handle_iq} uses the IQ's request ID to return an \code{Iq.t} representing the stanza error \code{feature-not-implemented}. The calling code translates this into the actual XML and pushes this to the work queue.
 
   \item \code{handle_presence} watches for the final \code{<presence type="unavailable" />} that signifies the client's wish to disconnect, and returns a value that the calling code uses to end the loop.
 
@@ -412,9 +412,9 @@ Since each client has substantial state (sockets, buffers, XMPP session), I reas
 \begin{itemize}
   \item Constructor \code{client} is called with the username and the server address; it connects, and stores the username for later.
 
-  \item \code{#handshake} method performs handshake and returns the roster. The handshake here is designed to be symmetric to server's, to ensure it all goes smoothly. It is not designed to anticipate substantial variation in the server responses, as it is purely for testing.
+  \item \code{#handshake} method performs handshake and returns the roster. The handshake here is designed to be symmetric to the server's, to ensure it all goes smoothly. It is not designed to anticipate substantial variation in the server responses, as it is purely for testing.
 
-  \item \code{#message "recpt" body} sends the body XML via a \code{<message>} to \code{recpt@ptii.proj}.
+  \item \code{#message "recpt" body} sends the body XML via a \code{message} stanza to \code{recpt@ptii.proj}.
 
   \item \code{#message_t "recpt" text} is a more user-friendly version where the body consists of text. The text is wrapped in a \code{<body>} element, without which Psi does not display the message.
 

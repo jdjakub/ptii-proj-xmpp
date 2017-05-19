@@ -120,10 +120,3 @@ Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, the
 I view supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 Finally, there is a concept of groups that users can be a part of, but I will focus on the roster essentials first.
-
-\subsection{Multi-client architecture}
-This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as
-\begin{itemize}
-  \item Developed first for a single client; multiple clients perform the same actions specified by the same function, just in  different thread
-  \item Design of the testing clients; explaining the analogous Section \ref{sec:mod-client} in Implementation, as well as the test rig
-\end{itemize}
