@@ -1,12 +1,11 @@
 \chapter{Evaluation}
-\section{Presence notifications}
-I had three rosters for testing purposes: \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Their mutual subscriptions demonstrate the four combinations \code{none}, \code{from}, \code{to}, and \code{both}.
-[sub graph??]
-The 
-The logs show that their consecutive connections produce the correct presence-notification patterns in accordance with their subscriptions to each other.
+\section{Presence notifications and roster retrieval}
+I had three rosters for testing purposes: \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Alice is subscribed to Bob; Bob and Caroll are mutually subscribed. Thus, their subscriptions demonstrate the four combinations \code{none} (Alice-Caroll), \code{from} (Bob-Alice), \code{to} (Alice-Bob), and \code{both} (Bob-Caroll).
 
-\section{Roster management}
-I have evidence that in the aforementioned connections the clients receive their rosters as expected. The lack of CRUD operations means there is little else to do.
+I started an OCaml toplevel session and created the three client objects. I then connected and handshaked in the order Alice, Bob, Caroll.
+The logs (see Appendix~\ref{apdx:pres-logs}) show that their consecutive connections produce the correct presence-notification patterns, according to their subscriptions to each other: Alice received Bob's presence, Bob received Caroll's presence, and everyone received their own presence. When Caroll disconnected, only Bob received the notification; when Bob disconnected, Alice was notified.
+
+The logs also indicate that the users' rosters were correctly retrieved.
 
 \section{Handshake; connect / disconnect}
 I have screenshot and logs collectively showing the following:
@@ -54,7 +53,7 @@ My primary aim was to see how throughput of message delivery was affected by the
 
 To keep the client controller simple, I adopted following model: $n$ clients send a fixed message to $n$ other clients, as fast as possible, until the program is manually terminated. To begin with, I used a 445-byte text string which, when wrapped in the XML \code{message} element, ran over the 512-byte size of the parsing buffers. This meant the figures would incorporate the buffering behaviour of the server and complete the worst-case behaviour under constant requests from clients.
 
-The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
+The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays consistently close to 5 seconds\footnote{The sampler thread compensates for the time it spends calculating by reducing the time to sleep between samples. }.
 
 \section{Procedure}
 I began by observing the time-throughput curve for $n=20$, 40, and 60. For $n=70$ and above, the server demonstrated its breaking point by causing itself and the other applications on my computer to hang and require a forced reboot. I stopped there and started filling in the gaps between the other values; unfortunately, time did not premit further investigation of this issue.

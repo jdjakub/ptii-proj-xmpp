@@ -65,7 +65,7 @@ To help guide me through the relevant sections of RFC 6120 and 6121, I downloade
 
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
-\subsection{Handshake and setup considerations}
+\subsection{Handshake and setup considerations}\label{sec:prep-handshake}
 Communication in XMPP revolves around sending stanzas over XML streams. After TCP connection, the client and server need to set up their streams and negotiate various features before they can begin exchanging stanzas. This is known as the handshake. I see the handshake as consisting of the following steps:
 \begin{enumerate}
   \item Set up the streams. The client and server exchange \code{<stream>} opening tags containing the server name, protocol version (1.0) and a stream ID for the client to hold onto.
@@ -118,6 +118,8 @@ The subscribers of user A are recorded in the XMPP \code{<item>} elements as \co
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
 I view supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
+
+Finally, there is a concept of groups that users can be a part of, but I will focus on the roster essentials first.
 
 \subsection{Multi-client architecture}
 This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as

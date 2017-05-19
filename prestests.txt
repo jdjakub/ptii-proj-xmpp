@@ -73,6 +73,9 @@ Result.Ok
 utop # alice#spill >>| Raw.to_string;;
 <blocks>
 
+utop # bob#disconnect;;
+- : unit  = ()
+
 utop # alice#spill >>| Raw.to_string;;
 
 - : (string, string) result =
