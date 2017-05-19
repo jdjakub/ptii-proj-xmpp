@@ -76,12 +76,14 @@ I obtained time-throughput characteristics for $n=5$, 10, 20, 30, 40 and 60. Ove
 Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns---see Appendix~\ref{apdx:graphs} for details.
 
 \begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold.png}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold/cold.png}
   \caption{Graph of the 5 repeats performed for $n=30$, showing decay from peak and gradual stabilisation.}
   \label{fig:example-chstic}
 \end{figure}
 
 As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated into Figure~\ref{fig:summary}.
+
+As expected, the server's throughput suffers under greater load. But the curve seems to flatten out to a value of approximately 14000msg/s, which is good considering the intended use of an XMPP server. Under normal conditions, clients are not constantly sending messages as fast as possible.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/throughp_clients.png}

@@ -56,13 +56,12 @@ Name:               & \bf Joel Jakubovic                         \\
 College:            & \bf Pembroke  College                      \\
 Project Title:      & \bf An XMPP Server Implementation In OCaml \\
 Examination:        & \bf Computer Science Tripos -- Part II, July 2017  \\
-Word Count:         & \bf About 7000\footnotemark[1]
-                      (well less than the 12000 limit)  \\
+Word Count:         & \bf 8464\footnotemark[1]  \\
 Project Originator: & Dr Anil Madhavapeddy \& Dr Richard Mortier           \\
 Supervisor:         & Dr Richard Mortier                    \\
 \end{tabular}
 }
-\footnotetext[1]{This word count was not yet computed
+\footnotetext[1]{This word count was computed
 by \texttt{detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
 }
 \stepcounter{footnote}
@@ -70,8 +69,7 @@ by \texttt{detex diss.tex | tr -cd '0-9A-Za-z $\tt\backslash$n' | wc -w}
 
 \section*{Original Aims of the Project}
 
-To use the OCaml language and its libraries to build a server implementing the XMPP protocol \ldots conforming to the core XMPP spec as well as the XMPP-IM extension spec.
-
+To use the OCaml language and its libraries to build a performant server implementing the XMPP protocol, conforming to the core XMPP specification as well as the XMPP-IM extension specification.
 \section*{Work Completed}
 
 A server, implementing basic XMPP functionality, including message forwarding to clients and presence notification according to subscription between clients. A simple client was also developed for testing purposes, and its bytecode form is interactively usable in the OCaml toplevel.
@@ -104,7 +102,9 @@ extent for a comparable purpose.
 \pagestyle{headings}
 
 \chapter{Introduction}
-The eXtensible Messaging and Presence Protocol (XMPP) is designed for securely passing XML messages between clients and servers. Amongst its services are ordinary instant-messaging functionality, storage of contacts, discovery of online status of users, and push-based notifications. Google and Apple employ it for the latter use, and it is central to the well-known WhatsApp messaging application. \ldots
+The eXtensible Messaging and Presence Protocol (XMPP) is designed for passing XML messages between clients and servers. Amongst its services are ordinary instant-messaging functionality, storage of contacts, discovery of online status of users, and push-based notifications. Google and Apple employ it for the latter use, and it is central to the well-known WhatsApp messaging application.
+
+There are implementations for many protocols in the OCaml ecosystem, mainly targeting MirageOS. XMPP is lacking, however, and in this project I set out to build a working implementation of the XMPP protocol for OCaml.
 
 \chapter{Preparation}
 For the bulk of the preparatory work, the clue was in the title: I needed to be familiar with OCaml and XMPP. This involved maintaining a basic level of competence with OCaml language features, as well as experience with the libraries and tools I was going to use; understanding of the basic concepts of XML, and which features are relevant to XMPP; then, the details of the XMPP protocol itself. Once I had a vision of what would be needed, I could design the general architecture of the server.
@@ -148,11 +148,11 @@ I developed the following informal Context-Free Grammar for this subset of XML, 
 \hspace*{-\parindent}%
 \begin{minipage}{\linewidth}
   \begin{lstlisting}
-  qname    ::= (ident ':')? ident
+  qname     ::= (ident ':')? ident
   attr_val ::= qname '=' '"' string '"'
-  branch   ::= '<' qname attr_val* tag_end
-  tag_end  ::= '/>'
-             | '>' node '</' qname '>'
+  branch    ::= '<' qname attr_val* tag_end
+  tag_end   ::= '/>'
+              | '>' node '</' qname '>'
 
   node  ::= branch
          | text
@@ -169,7 +169,7 @@ The most comprehensive and in-depth resource on XMPP is the core specification, 
 
 Once I had a broad overarching understanding, the only place I could start with was the communications setup and handshake. The \name{Definitive Guide} was helpful, but for the details I had to delve into the RFC. I quickly realised that XMPP is a very large and complex protocol, and I would have to prioritise the aspects that would get me to a message-processing stage (detailed in XMPP-IM, RFC 6121) as fast as possible. In other words, I needed to adopt a breadth-first, and not depth-first, approach to both understanding XMPP and implementing a server for it. Thus, for each feature of the protocol, I pressed ahead with the core behaviour first. The specification contains a rather overwhelming range of error cases and caveats for most aspects of XMPP, and I treated these details as extension work for any remaining time at the end.
 
-To help guide me through the relevant sections of RFC 6120 and 6121, I downloaded the XMPP client program Psi\cite{Psi-IM} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
+To help guide me through the relevant sections of RFC 6120 and 6121, I downloaded the XMPP client program \emph{Psi} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
 
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
@@ -180,7 +180,7 @@ Communication in XMPP revolves around sending stanzas over XML streams. After TC
 
   \item Offer the list of stream features that the client can choose from. These are the subject of numerous extensions and concern topics such as verified authentication and encryption of the streams. The only capability \emph{required} by the specification, and by the Psi client, is to have some form of authentication mechanism. The simplest way to do this is to offer authentication via the \code{PLAIN} mechanism, receiving the client's username and password in base64-encoded plain text. This can then be accepted by default. Specific user accounts and secure authentication are beyond the scope of this project.
 
-  \item Respond with `success' to client. Restart the stream anew by handshaking again\footnote{This is mainly intended for encrypted connections and suchlike, so that the entire stream can be considered secured; nevertheless, it is still required in other cases.}. Offer features again, this time consisting of the required process of ``resource binding''.
+  \item Respond with `success' to client. Restart the stream anew by handshaking again\footnote{This is mainly intended for encrypted connections and suchlike, so that the entire stream can be considered secured; nevertheless, it is still required in other cases.}. Offer features again, this time consisting of the required process of \emph{resource binding}.
 
   \emph{Resources} in XMPP allow the same user to communicate on different devices; they are appended to a client's Jabber ID, or JID\footnote{XMPP grew out of the older Jabber protocol, and users are identified by their JIDs. A JID looks very similar to an e-mail address, consisting of a username and the name of the server on which they reside: \code{username@server.net}.}, to make a \emph{full JID}. For example, the user \code{alice} could possess two full JIDs: \code{alice@server.net/laptop} and \code{alice@server.net/phone}. The resource name is suggested by the client and either accepted or modified (in the case of clashes) by the server, which returns the full JID to the client. Resource binding is accomplished by \code{iq} (Information Query) stanzas.
 
@@ -201,7 +201,7 @@ XMPP \code{stanzas} are XML elements falling into three categories: \code{messag
 \begin{itemize}
   \item \code{message} stanzas represent communication between clients. They specify a `from' address, a `to' address, and a message type---for example, `chat'. Messages can contain somewhat arbitrary XML content, but the server need not perform inspection on this; it can simply forward it, untouched, to the recipient.
 
-  Handshaking with other servers and forwarding to clients residing on them, the `federated' model, complicates the process, as the server must be able to receive and understand the language of XMPP servers as well as clients. This would include negotiations with other servers on their terms---possibly requiring implementation of encryption and authentication, or other stream features, in order to conform. Forwarding messages to \emph{directly connected} clients is the priority.
+  Handshaking with other servers and forwarding to clients residing on them---the \emph{federated} model---complicates the process, as the server must be able to receive and understand the language of XMPP servers as well as clients. This would include negotiations with other servers on their terms---possibly requiring implementation of encryption and authentication, or other stream features, in order to conform. Forwarding messages to \emph{directly connected} clients is the priority.
 
   \item \code{presence} stanzas inform the server, and other clients, about the status of a user. There are the many usual options for IM applications (Away, Do Not Disturb, etc.), but the most important ones are Available and Unavailable, signifying an online and disconnected status, respectively.
 
@@ -225,14 +225,14 @@ The subscribers of user A are recorded in the XMPP \code{<item>} elements as \co
 
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
-I view supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
+I view supporting general CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming; of the CRUD operations, only Reading rosters will apply. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 Finally, there is a concept of groups that users can be a part of, but I will focus on the roster essentials first.
 
 
 \chapter{Implementation}
 As the objective of this project was to build a server, I developed a server program (\code{server.ml}). I used the Psi client software to help develop the server, but for later testing a more automatable client was needed. For this reason, I also developed a basic XMPP client controller (\code{client.ml}).
-These both make heavy use of the \code{Xml} and \code{Xmpp} modules.
+They both make heavy use of the \code{Xml} and \code{Xmpp} modules.
 
 \section{The \code{Xml} module}\label{sec:xmlmod}
 XML is central to XMPP. In my code, it comes in three main forms: as text, as low-level `Raw' XML, and as high-level \code{xml_node}. The \code{Xml} module provides utilities for working with these representations.
@@ -266,12 +266,12 @@ let tree = fix ( fun t_rec ->
   <|> (take_while1 (function | '<' -> false | _ -> true) >>| Raw.text) )
 \end{ocaml}
 
-As an XML node can be simple text, this is accounted for by assuming text content when an attempt to parse a tag fails.
+The fact that an XML node can be simple text is accounted for, by assuming text content when an attempt to parse a tag fails.
 
 \subsection{The \code{Raw} module}
 As mentioned, the \code{Raw} module contains the `literal' abstract XML representation that these parsers target. Consider
 
-\begin{xml}[label={lst:xmlsample}]
+\begin{xml}[label={lst:xmlsample}, caption={XML sample.}]
 <foo:error type="fatal" xmlns:foo="long-application-namespace" >
   <a></a>
   <b></b>
@@ -327,7 +327,7 @@ respond_tree
 
 After consideration, I reasoned that it would be easier in the long run to add some conveniences for such construction of XML trees in OCaml code. Firstly, I wanted to avoid writing prefixes. The tags mostly use the default (empty) prefix, and the only attribute prefix that is ever used is \code{xmlns:}. By handling namespaces in a more convenient fashion, I could avoid having to specify prefixes for both tags and attributes altogether.
 
-For the purposes of output, I committed to using only one, standard prefix per namespace (recall that prefixes are local to parts of a tree, but such freedom is not really needed here). I bundled namespaces and prefixes together, so that I could refer to them by a simple OCaml identifier. For example, the opening \code{<stream:stream>} element uses the stream prefix, referring to the namespace \code{http://etherx.jabber.org/streams}. I made definitions (in the \code{Xmpp} module) like so:
+For the purposes of output, I committed to using only one, standard prefix per namespace (recall that prefixes are local to parts of a tree, but such freedom is not really needed here). I bundled namespaces and prefixes together, so that I could refer to them by a simple OCaml identifier. For example, the opening \code{<stream:stream>} element uses the \code{stream:} prefix, referring to the namespace \code{http://etherx.jabber.org/streams}. I made definitions (in the \code{Xmpp} module) like so:
 
 \begin{ocaml}
 let jstream  = ("stream","http://etherx.jabber.org/streams")
@@ -340,8 +340,8 @@ Other namespaces were only ever used with the default (empty) prefix. I did the 
 \begin{ocaml}
 let streams = ("","urn:ietf:params:xml:ns:xmpp-streams")
 let session = ("","urn:ietf:params:xml:ns:xmpp-session")
-let sasl    = ("","urn:ietf:params:xml:ns:xmpp-sasl")
-let bind    = ("","urn:ietf:params:xml:ns:xmpp-bind")
+let sasl     = ("","urn:ietf:params:xml:ns:xmpp-sasl")
+let bind     = ("","urn:ietf:params:xml:ns:xmpp-bind")
 ...
 \end{ocaml}
 
@@ -359,7 +359,7 @@ Raw.Xml (("","rectangle",[(("","width"),"240"); (("","height"),"180")]),[
 ]
 \end{ocaml}
 
-\code{xml_d} means `declare'. It is similar to \code{xml_n}, but accepts a prefix-namespace pair. It applies the prefix to the tag and declares the association between prefix and tag in the attributes, automatically. This means that example \ref{lst:xmlsample} could be constructed like so:
+\code{xml_d} means `declare'. It is similar to \code{xml_n}, but accepts a prefix-namespace pair. It applies the prefix to the tag and declares the association between prefix and tag in the attributes, automatically. This means that Example \ref{lst:xmlsample} could be constructed like so:
 
 \begin{ocaml}
 module Xmpp = struct
@@ -409,7 +409,7 @@ The language of any text content is, like namespaces, an inherited special attri
 The construction of an \code{xml_node} from \code{Raw.xml} is accomplished by the \code{from_raw_br} function. It recursively walks the tree, building up \code{attr} and \code{namespace} maps along the way, and processes special attributes.
 
 \subsubsection{Semantic checking and matching} \label{sec:matchers}
-The text-to-\code{Raw} parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of ``pattern matching'' rather than parsing. OCaml's built-in pattern matching proved not to be suitable for this purpose [and would not work with the high-level rep anyway; perhaps I should prioritise this reason], so I went down the route of parsers and combinators modelled after Angstrom.
+The text-to-\code{Raw} parsers solve the problem of structuring XML and detecting syntax errors; after all, not all text is valid XML. However, XMPP is a protocol over XML and hence imposes a second level of `syntax' on top of this. So, in a similar way, not all valid XML is valid XMPP. But this does not entail further structuring of the XML; rather, it mainly involves checking that certain tags or attributes are present, and extracting values of attributes or embedded text nodes --- this problem is one of \emph{pattern matching} rather than parsing. OCaml's built-in pattern matching is unsuitable for this purpose, being incompatible with the structures in \code{xml_node}, so I went down the route of parsers and combinators modelled after Angstrom.
 
 Unlike Angstrom's parsers, which are designed to be fairly orthogonal fundamental building blocks of more complex parsers, mine are deliberately special-purpose. I went with whatever would be useful to write readable code, without necessarily being exhaustive in the range of behaviours achievable by combining them.
 
@@ -437,7 +437,7 @@ The matchers live in the \code{Xml.Check} module. The main ones are \code{tag} /
   \item \code{text} gives the text string of a \code{Text} node
 \end{itemize}
 
-I avoid using the word `return' here, as strictly what these functions return is a \code{Result}, possibly containing the `resulting' value --- or an error. For those that merely check some condition rather than retrieve a value (\code{tag}/\code{qtag} and \code{attv}), I say they `succeed' instead\footnote{This could mean `resulting' in the value \code{()}, but I actually found it more useful to `result' in the \code{xml_node} passed in.}.
+I avoid using the word `return' here, as strictly what these functions return is a \code{Result}, possibly containing the `resulting' value---or an error. For those that merely check some condition rather than retrieve a value (\code{tag}/\code{qtag} and \code{attv}), I say they `succeed' instead\footnote{This could mean `resulting' in the value \code{()}, but I actually found it more useful to `result' in the \code{xml_node} passed in.}.
 
 \subsubsection{Matcher combinators}
 The combinators let me write XML matching code resembling, as closely as possible in OCaml\footnote{Short of syntax extensions perhaps, which I am unfamiliar with.}, the XML itself:
@@ -734,12 +734,14 @@ I obtained time-throughput characteristics for $n=5$, 10, 20, 30, 40 and 60. Ove
 Figure~\ref{fig:example-chstic} is an example of this. The steep rise at the beginning is an artefact caused by an initial throughput sample of $0$ just before the effect of the clients is felt, and can be ignored. The decay from an initial peak is likely due to the filling of the buffers in the OS kernel, which are much larger than my server's 512-byte buffers. The different repeats all stabilise fairly close to one another. The rest of the graphs share these patterns---see Appendix~\ref{apdx:graphs} for details.
 
 \begin{figure}
-  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold.png}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold/cold.png}
   \caption{Graph of the 5 repeats performed for $n=30$, showing decay from peak and gradual stabilisation.}
   \label{fig:example-chstic}
 \end{figure}
 
 As the number $n$ of client pairs increases, the general trend is for the throughput to decrease. To display this visually on a 2-D plot, I obtained a set of values for each $n$. I took the minimum, maximum, median and lower/upper-quartile values of each repeat, and averaged them across the repeats. The resulting values were incorporated into Figure~\ref{fig:summary}.
+
+As expected, the server's throughput suffers under greater load. But the curve seems to flatten out to a value of approximately 14000msg/s, which is good considering the intended use of an XMPP server. Under normal conditions, clients are not constantly sending messages as fast as possible.
 
 \begin{figure}
   \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/throughp_clients.png}
@@ -749,5 +751,38 @@ As the number $n$ of client pairs increases, the general trend is for the throug
 
 
 \chapter{Conclusions}
+This project has demonstrated that it is possible to create a performant message-forwarding server using the OCaml language and libraries. It has also demonstrated some of the benefits of using a language like OCaml for parsing-related tasks. The basic implementation I have made can function as a substrate for more advanced XMPP functionality.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% the appendices
+\appendix
+
+\chapter{Presence logs}\label{apdx:pres-logs}
+\scriptsize\verbatiminput{../prestests.txt}
+
+\chapter{Throughput graphs}\label{apdx:graphs}
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/5n5/cold/cold.png}
+\end{figure}
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/10n10/cold/cold.png}
+\end{figure}
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/20n20/cold/cold.png}
+\end{figure}
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/30n30/cold/cold.png}
+\end{figure}
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/40n40/cold/cold.png}
+\end{figure}
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/lipsum/60n60/cold/cold.png}
+\end{figure}
+
+\chapter{Project Proposal}
+
+\input{proposal}
 
 \end{document}

@@ -61,7 +61,7 @@ The most comprehensive and in-depth resource on XMPP is the core specification, 
 
 Once I had a broad overarching understanding, the only place I could start with was the communications setup and handshake. The \name{Definitive Guide} was helpful, but for the details I had to delve into the RFC. I quickly realised that XMPP is a very large and complex protocol, and I would have to prioritise the aspects that would get me to a message-processing stage (detailed in XMPP-IM, RFC 6121) as fast as possible. In other words, I needed to adopt a breadth-first, and not depth-first, approach to both understanding XMPP and implementing a server for it. Thus, for each feature of the protocol, I pressed ahead with the core behaviour first. The specification contains a rather overwhelming range of error cases and caveats for most aspects of XMPP, and I treated these details as extension work for any remaining time at the end.
 
-To help guide me through the relevant sections of RFC 6120 and 6121, I downloaded the XMPP client program Psi\cite{Psi-IM} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
+To help guide me through the relevant sections of RFC 6120 and 6121, I downloaded the XMPP client program \emph{Psi} and learned its basic use. I would treat Psi as a typical client and make the server conform to the data it sent.
 
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
