@@ -80,17 +80,21 @@ Communication in XMPP revolves around sending stanzas over XML streams. After TC
   \item Expect an initial \code{presence} stanza, meaning ``client online''. Echo this back to the client, with its full JID in the \code{from} attribute, and forward to its subscribers.
 \end{enumerate}
 
-Once these steps are completed, ordinary \code{message}, \code{presence} and \code{iq} stanzas can be exchanged.
-
 If any errors occur at this stage, the stream is terminated by sending a stream error and the closing \close{</stream>} tag. However, due to the number of varied errors that can occur, graceful termination is an unhelpful goal to prioritise and simply closing the \code{<stream>} element will suffice for my purposes.
 
+Once these steps are completed, ordinary stanzas can be exchanged.
+
 \subsection{Messaging and stanzas}
-Outline:
+XMPP \code{stanzas} are XML elements falling into three categories: \code{message}, \code{presence} and \code{iq}.
+
 \begin{itemize}
-  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
-  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
-  \item Sticking to single-server model; i.e. no federation (``yet'')
-  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
+  \item \code{message} stanzas represent communication between clients. They specify a `from' address, a `to' address, and a message type---for example, `chat'. Messages can contain somewhat arbitrary XML content, but the server need not perform inspection on this; it can simply forward it untouched to the recipient.
+
+  Handshaking with other servers and forwarding to clients residing on them, the `federated' model, complicates the process, as the server must be able to receive and understand the language of XMPP servers as well as clients. Forwarding messages to directly connected clients is the priority.
+
+  \item \code{presence} stanzas inform the server, and other clients, about the status of a user. There are the many usual options for IM applications (Away, Do Not Disturb, etc.), but the most important ones are Available and Unavailable, signifying an online and disconnected status, respectively.
+
+  \item \code{iq} stanzas encompass a range of get/set operations. They use request IDs so the server can respond where convenient. I will focus on supporting only the IQs necessary for the handshake; there are too many potential services otherwise. A `graceful' error response, in the form of the \code{feature-unavailable} error IQ, is needed so that more feature-rich clients such as Psi can continue to operate with the server on a basic level.
 \end{itemize}
 
 \subsection{The roster}\label{sec:prep-roster}
@@ -110,7 +114,7 @@ The subscribers of user A are recorded in the XMPP \code{<item>} elements as \co
 
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
-However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
+I view supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 \subsection{Multi-client architecture}
 This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as
