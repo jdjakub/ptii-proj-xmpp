@@ -124,7 +124,9 @@ The server needed to handle many clients at once, so I needed some form of multi
 \section{XML}
 XML is a notation for hierarchical trees, and an XML node \footnote{Technically, there are also text nodes: as XML was designed as a markup language, any point in the tree can be made up of text, or `content'.} has the form
 \begin{xml}
-<prefix:tag pre1:attr1="value1" pre2:attr2="value2" ... pren:attrn="valuen" >
+<prefix:tag pre1:attr1="value1" pre2:attr2="value2"
+            ...
+            pren:attrn="valuen" >
    ... children ...
 </prefix:tag>
 \end{xml}
@@ -138,11 +140,12 @@ where \code{attr}\(i\) are the node's attributes. Most of the time, prefixes are
 \subsection{Namespaces}\label{sec:namespaces}
 Namespaces are a way to organise tags and avoid naming conflicts in XML; each tag is qualified by a namespace. Namespaces are typically long strings, and it would be cumbersome to work with XML where every single tag had such a namespace concatenated onto it. Instead, a shorthand for the namespace is prefixed onto tags. The association between a prefix and the namespace it represents is defined by an (ab)use of the XML attribute system: the `attribute' \code{xmlns:foo="bar"} is treated specially as saying that the prefix \code{foo} represents the namespace \code{bar}. A tag can in fact forego a prefix, in which case it is considered to use the default prefix, signified by \code{xmlns="bar"}. These associations are local to the node in the tree and are inherited by its children.
 
-There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project, and did not investigate them. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas or comments / \code{CDATA} sections.
+There are other special `attributes' in this fashion, such as \code{xml:lang}, which specifies the language used for plain text within the subtree it is part of. I deemed the possibly many other special attributes not relevant to this project, and did not investigate them. Nor did I concern myself with other beauraucratic details such as file encoding, validation via XML schemas, or comments / \code{CDATA} sections.
 
 \subsection{Formal grammar for XML}
 I developed the following informal Context-Free Grammar for this subset of XML, to guide my implementation of the parser:
 
+\hspace*{-\parindent}%
 \begin{minipage}{\linewidth}
   \begin{lstlisting}
   qname    ::= (ident ':')? ident
@@ -171,10 +174,6 @@ To help guide me through the relevant sections of RFC 6120 and 6121, I downloade
 What follows in subsequent sections is my consideration of specific parts of XMPP, and the design decisions affecting their representation in my server.
 
 \subsection{Handshake and setup considerations}
-Outline:
-\begin{itemize}
-  \item Stream errors and disconnection
-\end{itemize}
 Communication in XMPP revolves around sending stanzas over XML streams. After TCP connection, the client and server need to set up their streams and negotiate various features before they can begin exchanging stanzas. This is known as the handshake. I see the handshake as consisting of the following steps:
 \begin{enumerate}
   \item Set up the streams. The client and server exchange \code{<stream>} opening tags containing the server name, protocol version (1.0) and a stream ID for the client to hold onto.
@@ -183,24 +182,30 @@ Communication in XMPP revolves around sending stanzas over XML streams. After TC
 
   \item Respond with `success' to client. Restart the stream anew by handshaking again\footnote{This is mainly intended for encrypted connections and suchlike, so that the entire stream can be considered secured; nevertheless, it is still required in other cases.}. Offer features again, this time consisting of the required process of ``resource binding''.
 
-  \emph{Resources} in XMPP allow the same user to communicate on different devices; they are appended to a client's Jabber ID, or JID\footnote{XMPP grew out of the older Jabber protocol, and users are identified by their JIDs. A JID looks very similar to an e-mail address, consisting of a username and the name of the server on which they reside: \code{username@server.net}.}, to make a ``full JID''. For example, the user \code{alice} could possess two full JIDs \code{alice@server.net/laptop} and \code{alice@server.net/phone}. The resource name is suggested by the client and either accepted or modified (in the case of clashes) by the server, which returns the full JID to the client. Resource binding is accomplished by \code{iq} (Information Query) stanzas.
+  \emph{Resources} in XMPP allow the same user to communicate on different devices; they are appended to a client's Jabber ID, or JID\footnote{XMPP grew out of the older Jabber protocol, and users are identified by their JIDs. A JID looks very similar to an e-mail address, consisting of a username and the name of the server on which they reside: \code{username@server.net}.}, to make a \emph{full JID}. For example, the user \code{alice} could possess two full JIDs: \code{alice@server.net/laptop} and \code{alice@server.net/phone}. The resource name is suggested by the client and either accepted or modified (in the case of clashes) by the server, which returns the full JID to the client. Resource binding is accomplished by \code{iq} (Information Query) stanzas.
 
-  \item Expect an \code{<iq>} `set' session request, to formally establish the session, and respond with an empty \code{<iq>} signalling success.
+  \item Expect an \code{iq} `set' session request, to formally establish the session, and respond with an empty \code{iq} signalling success.
 
   \item Expect an \code{iq} `get' request for the roster (Section~\ref{sec:prep-roster}), respond with client's roster.
 
-  \item Expect an initial \code{presence} stanza , meaning ``client online''. Echo this back to the client, with its full JID in the \code{from} attribute, and forward to its subscribers.
+  \item Expect an initial \code{presence} stanza, meaning ``client online''. Echo this back to the client, with its full JID in the \code{from} attribute, and forward to its subscribers.
 \end{enumerate}
 
-Once these steps are completed, ordinary \code{message}, \code{presence} and \code{iq} stanzas can be exchanged.
+If any errors occur at this stage, the stream is terminated by sending a stream error and the closing \code{</stream>} tag. However, due to the number of varied errors that can occur, graceful termination is an unhelpful goal to prioritise and simply closing the \code{<stream>} element will suffice for my purposes.
+
+Once these steps are completed, ordinary stanzas can be exchanged.
 
 \subsection{Messaging and stanzas}
-Outline:
+XMPP \code{stanzas} are XML elements falling into three categories: \code{message}, \code{presence} and \code{iq}.
+
 \begin{itemize}
-  \item Sticking to simple messages with \code{to}, \code{from}, \code{type} attributes; oblivious to nested XML, simply pass along
-  \item Sticking to online-offline (\code{avaliable} / \code{unavailable}) presence notification only
-  \item Sticking to single-server model; i.e. no federation (``yet'')
-  \item Only implementing the \code{iq} stanzas necessary for handshake; too many potential services otherwise. Graceful (spec-sanctioned) error response (\code{feature-unavailable} error stanza) so that more feature-rich clients (read: Psi) can still continue to operate with the server.
+  \item \code{message} stanzas represent communication between clients. They specify a `from' address, a `to' address, and a message type---for example, `chat'. Messages can contain somewhat arbitrary XML content, but the server need not perform inspection on this; it can simply forward it, untouched, to the recipient.
+
+  Handshaking with other servers and forwarding to clients residing on them, the `federated' model, complicates the process, as the server must be able to receive and understand the language of XMPP servers as well as clients. Forwarding messages to directly connected clients is the priority.
+
+  \item \code{presence} stanzas inform the server, and other clients, about the status of a user. There are the many usual options for IM applications (Away, Do Not Disturb, etc.), but the most important ones are Available and Unavailable, signifying an online and disconnected status, respectively.
+
+  \item \code{iq} stanzas encompass a range of get/set operations. They use request IDs so the server can respond where convenient. I will focus on supporting only the IQs necessary for the handshake; there are too many potential services otherwise. A `graceful' error response, in the form of the \code{feature-unavailable} error IQ, is needed so that more feature-rich clients such as Psi can continue to operate with the server on a basic level.
 \end{itemize}
 
 \subsection{The roster}\label{sec:prep-roster}
@@ -210,17 +215,17 @@ The concept of subscription has design ramifications worth discussing. The word 
 
 The two main options for graph representation are \emph{adjacency list} and \emph{adjacency matrix}.
 
-An adjacency matrix, being a conceptually two-dimensional structure, would have forced me to think about implementation in terms of nested one-dimensional maps or arrays. This would complicate the issue of avoiding loading the entire graph at once, and hence how to split it into separate files or regions of a file, and so on. On the other hand, an adjacency list for each node would be simple to implement using conventional files and in-memory data structures. Furthermore, this already matches up to the way XMPP treats the subscription relation; a list of contacts per user. When the user connects, simply load the list.
+An adjacency matrix, being a conceptually two-dimensional structure, would force me to think about implementation in terms of nested one-dimensional maps or arrays. This would complicate the issue of avoiding loading the entire graph at once, and hence how to split it into separate files or regions of a file, and so on. On the other hand, an adjacency list for each node would be simple to implement using conventional files and in-memory data structures. Furthermore, this already matches up to the way XMPP treats the subscription relation; a list of contacts per user. When the user connects, simply load the list.
 
-Thus, I picked the adjacency list. I would have a separate file for each `vertex' of the graph, in a format resembling a list of \code{<item>}s, and similar separate in-memory data structures, making loading and lookup simple to think about.
+Thus, I choose the adjacency list. I will have a separate file for each `vertex' of the graph, in a format resembling a list of \code{<item>}s, and similar separate in-memory data structures, making loading and lookup simple to think about.
 
-For example, the username \code{alice} has a roster file located in the \code{roster/} directory called \code{alice.xml}. It consists of a list of XMPP roster \code{<item>} elements.
+For example, the username \code{alice} can have a roster file located in the \code{roster/} directory called \code{alice.xml}. It consists of a list of XMPP roster \code{<item>} elements.
 
 The subscribers of user A are recorded in the XMPP \code{<item>} elements as \code{from}, \code{to}, or \code{both}. RFC 6121 defines \code{to} as A having a subscription to the user in the \code{<item>} element; \code{from} is the converse, and \code{both} simply means A and B are mutually subscribed.
 
 Now, if A's roster (on disk or in memory) says it is subscribed \code{to} B, then B's roster should say it is subscribed \code{from} A. The analogous case applies to \code{from}/\code{to}. This is an invariant that must be maintained if the roster, taken as a whole, is to be consistent, and is a consequence of the adjacency list representation.
 
-However, I viewed supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before messaging would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
+I view supporting CRUD (Create, Read, Update, Delete) operations for the roster as extension work, since implementing them before getting to stanza delivery would be too time consuming. The rosters will therefore be determined by the content of the roster files, and I will manually ensure their consistency. Since they do not change during runtime or get updated by the server, this consistency is maintained.
 
 \subsection{Multi-client architecture}
 This section is supposed to explain the design behind Section \ref{sec:mod-dispatch} (dispatch machinery) as well as
@@ -498,6 +503,7 @@ There is conceptually a mapping from user to their roster. I found it useful to 
 
 I represented \code{<item>} records, in-memory, as follows:
 
+\hspace*{-\parindent}%
 \begin{minipage}{\linewidth}
   \begin{ocaml}
     type item = {

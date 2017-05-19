@@ -1,8 +1,9 @@
 \chapter{Evaluation}
-All is outline:
-
 \section{Presence notifications}
-I have \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. I have evidence that their consecutive connections produce the correct presence-notification patterns in accordance with their subscriptions to each other, though only in one of the six orders of connection. [should I bother being exhaustive with this?]
+I had three rosters for testing purposes: \code{roster/alice.xml}, \code{roster/bob.xml}, \code{roster/caroll.xml}. Their mutual subscriptions demonstrate the four combinations \code{none}, \code{from}, \code{to}, and \code{both}.
+[sub graph??]
+The 
+The logs show that their consecutive connections produce the correct presence-notification patterns in accordance with their subscriptions to each other.
 
 \section{Roster management}
 I have evidence that in the aforementioned connections the clients receive their rosters as expected. The lack of CRUD operations means there is little else to do.
@@ -13,6 +14,39 @@ I have screenshot and logs collectively showing the following:
   \item Working handshake between Psi and server, plus appropriate \code{feature-not-implemented} response to the non-core features Psi requests
   \item Conversation between Bob and Caroll via the Psi messaging interface and the \code{Client} module respectively
 \end{itemize}
+Figure~\ref{fig:iq-errors} demonstrates an attempt by Bob to connect to the server using Psi. After a successful handshake, Psi gave an error dialog (not shown) because of the unsupported features, as seen in the server output. For example:
+
+\begin{xml}
+<iq xmlns="jabber:client" type="get" id="aacaa" >
+  <query xmlns="jabber:iq:private" >
+   <storage xmlns="storage:bookmarks"/>
+  </query>
+</iq>
+\end{xml}
+
+is answered with
+
+\begin{xml}
+<iq type="error" id="aacaa" >
+  <error type="cancel" >
+    <feature-not-implemented xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/>
+  </error>
+</iq>
+\end{xml}
+
+Psi still continued with the protocol and registered Bob as online. When Caroll connected via the \code{Client} module in the OCaml toplevel, the notification ``Caroll is online'' appeared in the top right-hand corner of the screen. Figure~\ref{caroll-msg} shows the result of two messages; Caroll sends hers with \code{caroll#message_t} and Bob sends his using the Psi interface. Entering \code{caroll#spill} in the toplevel showed that both Caroll's initial presence and Bob's message arrived properly.
+
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/iq_errors.png}
+  \caption{Response to unsupported IQ messages, after which Bob shows as Online in the Psi interface.}
+  \label{fig:iq-errors}
+\end{figure}
+
+\begin{figure}
+  \centering\includegraphics[width=\textwidth]{../transcripts/caroll_msg.png}
+  \caption{Conversation between Bob (Psi) and Caroll (\code{Client} module).}
+  \label{fig:caroll-msg}
+\end{figure}
 
 \section{Messaging}
 \subsection{Throughput}
@@ -22,7 +56,7 @@ To keep the client controller simple, I adopted following model: $n$ clients sen
 
 The server samples its throughput at regular intervals and outputs the values. It does this by keeping track of how many messages it delivered in the last 5 seconds; this message count is then divided by the actual time elapsed, which stays close to 5 seconds.
 
-\subsubsection{Procedure}
+\section{Procedure}
 I began by observing the time-throughput curve for $n=20$, 40, and 60. For $n=70$ and above, the server demonstrated its breaking point by causing itself and the other applications on my computer to hang and require a forced reboot. I stopped there and started filling in the gaps between the other values; unfortunately, time did not premit further investigation of this issue.
 
 As I ran the server five times for each value of $n$, I noticed that the performance of each repeat tended to be lower than those before it, and became more chaotic the longer it ran. This was unexpected; each test was done on a fresh, restarted instance of the server binary.
